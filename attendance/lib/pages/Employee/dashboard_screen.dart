@@ -27,7 +27,6 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   late AnimationController _controller;
   late Animation<double> _animation;
   Map<String, dynamic>? _todayData;
-  List<dynamic> _history = [];
   Timer? _statsTimer;
   String _workingFor = "0h 0m";
   DateTime? _serverTime;
@@ -75,7 +74,6 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       setState(() {
         _userData = results[0] as User;
         _todayData = results[1] as Map<String, dynamic>;
-        _history = results[2] as List<dynamic>;
         _isLoading = false;
         _errorMessage = null;
       });
@@ -138,14 +136,6 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     } else {
       setState(() => _workingFor = "0h 0m");
     }
-  }
-
-  String _calculateWeeklyHours() {
-    double total = 0;
-    for (var record in _history) {
-      total += (record['workingHours'] ?? 0).toDouble();
-    }
-    return "${total.toStringAsFixed(1)}h";
   }
 
   void _setupAnimation() {

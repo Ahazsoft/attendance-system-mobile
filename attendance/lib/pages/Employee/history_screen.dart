@@ -1,5 +1,8 @@
+import 'package:attendance/db/attendance_service.dart';
+import 'package:attendance/db/settings.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 class HistoryScreen extends StatefulWidget {
   final int id;
@@ -11,9 +14,170 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   bool isThisWeek = true;
+  List<dynamic> allAttendance = [];
+  bool isLoading = true;
+  String? error;
+  DateTime? _serverTimeUtc;
+  DateTime? _serverTimeEat;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchData();
+  }
+
+  Future<void> _fetchData() async {
+    try {
+      // Fetch server time and attendance in parallel
+      await Future.wait([_fetchServerTime(), _fetchAttendance()]);
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          error = e.toString();
+          isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _fetchServerTime() async {
+    try {
+      final serverTimeUtc = await SettingsService.getServerTime();
+      final serverTimeEat = serverTimeUtc.add(const Duration(hours: 3));
+      if (mounted) {
+        setState(() {
+          _serverTimeUtc = serverTimeUtc;
+          _serverTimeEat = serverTimeEat;
+        });
+      }
+    } catch (e) {
+      // If server time fetch fails, fallback to local device time
+      debugPrint('Failed to fetch server time: $e');
+      final now = DateTime.now();
+      if (mounted) {
+        setState(() {
+          _serverTimeUtc = now.toUtc();
+          _serverTimeEat = now.toUtc().add(const Duration(hours: 3));
+        });
+      }
+    }
+  }
+
+  Future<void> _fetchAttendance() async {
+    final data = await AttendanceService.getAllAttendance(widget.id);
+    if (mounted) {
+      setState(() {
+        allAttendance = data;
+      });
+    }
+  }
+
+  // Get reference current time in EAT (server or fallback)
+  DateTime get currentEat {
+    return _serverTimeEat ??
+        DateTime.now().toUtc().add(const Duration(hours: 3));
+  }
+
+  // Filter attendance based on current toggle
+  List<dynamic> get filteredAttendance {
+    final now = currentEat;
+    if (isThisWeek) {
+      // Get start of week (Monday) in EAT
+      final startOfWeek = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(Duration(days: now.weekday - 1));
+      final endOfWeek = startOfWeek.add(const Duration(days: 7));
+      return allAttendance.where((record) {
+        // Convert record's UTC check-in to EAT for comparison
+        final checkInUtc = DateTime.parse(record['checkInTime']);
+        final checkInEat = checkInUtc.add(const Duration(hours: 3));
+        return checkInEat.isAfter(
+              startOfWeek.subtract(const Duration(seconds: 1)),
+            ) &&
+            checkInEat.isBefore(endOfWeek);
+      }).toList();
+    } else {
+      // Current month in EAT
+      final startOfMonth = DateTime(now.year, now.month, 1);
+      final endOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+      return allAttendance.where((record) {
+        final checkInUtc = DateTime.parse(record['checkInTime']);
+        final checkInEat = checkInUtc.add(const Duration(hours: 3));
+        return checkInEat.isAfter(
+              startOfMonth.subtract(const Duration(seconds: 1)),
+            ) &&
+            checkInEat.isBefore(endOfMonth.add(const Duration(seconds: 1)));
+      }).toList();
+    }
+  }
+
+  // Calculate stats for the filtered period
+  Map<String, dynamic> get stats {
+    final records = filteredAttendance;
+    final daysPresent = records.length;
+    final totalHours = records.fold<double>(0.0, (sum, r) {
+      final hours = r['workingHours'];
+      if (hours == null) return sum;
+      return sum + (hours is int ? hours.toDouble() : hours as double);
+    });
+    final lateDays = records.where((r) => r['isLate'] == true).length;
+    return {
+      'days': daysPresent.toString(),
+      'hours': '${totalHours.toStringAsFixed(1)}h',
+      'late': lateDays.toString(),
+    };
+  }
+
+  String _formatDate(DateTime checkInUtc) {
+    final nowEat = currentEat;
+    final todayEat = DateTime(nowEat.year, nowEat.month, nowEat.day);
+    final recordEat = checkInUtc.add(const Duration(hours: 3));
+    final recordDateEat = DateTime(
+      recordEat.year,
+      recordEat.month,
+      recordEat.day,
+    );
+    if (recordDateEat == todayEat) return 'Today';
+    return DateFormat('MMM d').format(recordEat);
+  }
+
+  String _formatDay(DateTime checkInUtc) {
+    final recordEat = checkInUtc.add(const Duration(hours: 3));
+    return DateFormat('EEE').format(recordEat);
+  }
+
+  String _formatTime(DateTime? dateTime) {
+    if (dateTime == null) return '--';
+    final eat = dateTime.add(const Duration(hours: 3));
+    return DateFormat('h:mm a').format(eat);
+  }
+
+  String _formatDuration(double? hours) {
+    if (hours == null) return '--';
+    final h = hours.floor();
+    final m = ((hours - h) * 60).round();
+    return '${h}h ${m}m';
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (error != null) {
+      return Center(child: Text('Error: $error'));
+    }
+
+    final records = filteredAttendance;
+    final stat = stats;
+
     return Padding(
       padding: const EdgeInsets.all(24.0),
       child: Column(
@@ -52,7 +216,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             children: [
               Expanded(
                 child: _buildStatCard(
-                  '5',
+                  stat['days'],
                   'Days Present',
                   AppColors.cardWhite,
                   AppColors.primaryText,
@@ -61,7 +225,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: _buildStatCard(
-                  '42h',
+                  stat['hours'],
                   'Total Hours',
                   AppColors.lightGreen,
                   AppColors.primaryGreen,
@@ -70,7 +234,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: _buildStatCard(
-                  '2',
+                  stat['late'],
                   'Late Days',
                   AppColors.cardWhite,
                   AppColors.redLate,
@@ -83,51 +247,51 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
           // Timeline List
           Expanded(
-            child: ListView(
-              children: [
-                _buildTimelineItem(
-                  'Today',
-                  'Fri',
-                  '8:47 AM',
-                  '--',
-                  '3h 12m',
-                  isLate: false,
-                  isToday: true,
-                ),
-                _buildTimelineItem(
-                  'Mar 7',
-                  'Thu',
-                  '8:55 AM',
-                  '5:30 PM',
-                  '8h 35m',
-                  isLate: false,
-                ),
-                _buildTimelineItem(
-                  'Mar 6',
-                  'Wed',
-                  '9:12 AM',
-                  '5:15 PM',
-                  '6h 03m',
-                  isLate: true,
-                ),
-                _buildTimelineItem(
-                  'Mar 5',
-                  'Tue',
-                  '8:30 AM',
-                  '5:45 PM',
-                  '9h 15m',
-                  isLate: false,
-                ),
-                _buildTimelineItem(
-                  'Mar 4',
-                  'Mon',
-                  '8:42 AM',
-                  '5:00 PM',
-                  '8h 18m',
-                  isLate: false,
-                ),
-              ],
-            ),
+            child: records.isEmpty
+                ? Center(
+                    child: Text(
+                      'No attendance records for this period',
+                      style: AppTextStyles.bodyRegular,
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: records.length,
+                    itemBuilder: (context, index) {
+                      final record = records[index];
+                      final checkInUtc = DateTime.parse(record['checkInTime']);
+                      final checkOutUtc = record['checkOutTime'] != null
+                          ? DateTime.parse(record['checkOutTime'])
+                          : null;
+
+                      // Safe conversion: handle both int and double from JSON
+                      final rawHours = record['workingHours'];
+                      final double? workingHours = rawHours != null
+                          ? (rawHours is int
+                                ? rawHours.toDouble()
+                                : rawHours as double)
+                          : null;
+
+                      final isLate = record['isLate'] ?? false;
+                      final nowEat = currentEat;
+                      final checkInEat = checkInUtc.add(
+                        const Duration(hours: 3),
+                      );
+                      final isToday =
+                          checkInEat.year == nowEat.year &&
+                          checkInEat.month == nowEat.month &&
+                          checkInEat.day == nowEat.day;
+
+                      return _buildTimelineItem(
+                        _formatDate(checkInUtc),
+                        _formatDay(checkInUtc),
+                        _formatTime(checkInUtc),
+                        _formatTime(checkOutUtc),
+                        _formatDuration(workingHours),
+                        isLate: isLate,
+                        isToday: isToday,
+                      );
+                    },
+                  ),
           ),
         ],
       ),
