@@ -310,8 +310,12 @@ class _ScannerScreenState extends State<ScannerScreen> {
           ],
         ),
         IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () {},
+          icon: const Icon(Icons.refresh),
+          onPressed: () {
+            _loadSettingsFromServer();
+            _runLocationCheck();
+            _runWifiCheck();
+          },
           style: IconButton.styleFrom(backgroundColor: AppColors.cardWhite),
         ),
       ],
