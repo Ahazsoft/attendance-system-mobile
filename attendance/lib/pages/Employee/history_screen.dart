@@ -17,7 +17,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   List<dynamic> allAttendance = [];
   bool isLoading = true;
   String? error;
-  DateTime? _serverTimeUtc;
+  // DateTime? _serverTimeUtc;
   DateTime? _serverTimeEat;
 
   @override
@@ -51,7 +51,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
       final serverTimeEat = serverTimeUtc.add(const Duration(hours: 3));
       if (mounted) {
         setState(() {
-          _serverTimeUtc = serverTimeUtc;
           _serverTimeEat = serverTimeEat;
         });
       }
@@ -61,7 +60,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
       final now = DateTime.now();
       if (mounted) {
         setState(() {
-          _serverTimeUtc = now.toUtc();
           _serverTimeEat = now.toUtc().add(const Duration(hours: 3));
         });
       }
@@ -130,7 +128,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final lateDays = records.where((r) => r['isLate'] == true).length;
     return {
       'days': daysPresent.toString(),
-      'hours': '${totalHours.toStringAsFixed(1)}h',
+      'hours': '${totalHours.toStringAsFixed(2)}h',
       'late': lateDays.toString(),
     };
   }
