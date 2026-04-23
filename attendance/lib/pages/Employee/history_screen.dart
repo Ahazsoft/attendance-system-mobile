@@ -330,7 +330,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         borderRadius: BorderRadius.circular(12),
         border: bgColor == AppColors.lightGreen
             ? Border.all(color: AppColors.primaryGreen.withOpacity(0.3))
-            : null,
+            : Border.all(color: AppColors.greyText.withOpacity(0.3)),
         boxShadow: bgColor == AppColors.cardWhite
             ? [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 5)]
             : [],
@@ -406,6 +406,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           decoration: BoxDecoration(
                             color: AppColors.lightRed,
                             borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: AppColors.redLate.withOpacity(0.3),
+                            ),
                           ),
                           child: Text(
                             'Late',
@@ -423,6 +426,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     decoration: BoxDecoration(
                       color: AppColors.cardWhite,
                       borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.greyText.withOpacity(0.3),
+                      ),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withOpacity(0.02),
