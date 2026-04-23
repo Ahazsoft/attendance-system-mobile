@@ -358,7 +358,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                 ),
                 GestureDetector(
                   onTap: () {
-                    isInsideGeofence = false;
+                    // isInsideGeofence = false;
                     isCheckedIn
                         ? isInsideGeofence
                               ? _showCheckoutDialog()
