@@ -4,7 +4,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
   // static const String baseUrl = 'http://192.168.1.7:3001/api/v1/auth';
-  static const String baseUrl = 'http://10.68.70.202:3001/api/v1/auth';
+  // static const String baseUrl = 'http://10.68.70.202:3001/api/v1/auth';
+  static const String baseUrl =
+      'https://attendance-backend.ahaz.io/api/v1/auth';
 
   // Signup method
   static Future<Map<String, dynamic>> signup(
@@ -60,14 +62,14 @@ class AuthService {
   // Logout method
   static Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    // final token = prefs.getString('token');
 
-    if (token != null) {
-      await http.post(
-        Uri.parse('$baseUrl/logout'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-    }
+    // if (token != null) {
+    //   await http.post(
+    //     Uri.parse('$baseUrl/logout'),
+    //     headers: {'Authorization': 'Bearer $token'},
+    //   );
+    // }
 
     await prefs.remove('token');
     await prefs.remove('user');

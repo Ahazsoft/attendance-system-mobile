@@ -34,6 +34,9 @@ class _OfficeSettingsScreenState extends State<OfficeSettingsScreen> {
   final TextEditingController bssidController = TextEditingController();
   final TextEditingController secretController = TextEditingController();
 
+  String lat = "0";
+  String long = "0";
+
   @override
   void initState() {
     super.initState();
@@ -149,8 +152,15 @@ class _OfficeSettingsScreenState extends State<OfficeSettingsScreen> {
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
+
+      print(
+        "latitude: ${position.latitude} && longitude: ${position.longitude}",
+      );
+
       // 2. Update the controllers inside setState so the UI refreshes
       setState(() {
+        lat = position.latitude.toString();
+        long = position.longitude.toString();
         latitudeController.text = position.latitude.toString();
         longitudeController.text = position.longitude.toString();
       });
@@ -246,6 +256,8 @@ class _OfficeSettingsScreenState extends State<OfficeSettingsScreen> {
           ),
 
           const SizedBox(height: 20),
+
+          // Text("Lat: $lat \nLon: $long"),
           _buildGPS(),
 
           const SizedBox(height: 20),

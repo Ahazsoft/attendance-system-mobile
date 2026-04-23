@@ -4,7 +4,8 @@ import 'package:http/http.dart' as http;
 
 class SettingsService {
   // static const String baseUrl = 'http://192.168.1.7:3001/api/v1/settings';
-  static const String baseUrl = 'http://10.68.70.202:3001/api/v1/settings';
+  static const String baseUrl =
+      'https://attendance-backend.ahaz.io/api/v1/settings';
 
   // Fetch settings from DB
   static Future<Map<String, dynamic>> getSettings() async {

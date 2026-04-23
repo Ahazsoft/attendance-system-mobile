@@ -26,9 +26,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
   bool isSubmitting = false;
 
   // Office Geofence Constants
-  double centerLat = 8.986202255702445;
-  double centerLng = 38.78797835605372;
-  double allowedRadius = 10;
+  double centerLat = 8.986273300000001000000000000000;
+  double centerLng = 38.788376000000000000000000000000;
+  // double centerLat = 8.986202255702445;
+  // double centerLng = 38.78797835605372;
+  double allowedRadius = 150;
   String wifiBssid = "00:4c:e5:f6:61:49";
 
   final MobileScannerController cameraController = MobileScannerController(

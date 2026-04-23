@@ -5,15 +5,18 @@ import 'package:attendance/db/settings.dart';
 import 'package:attendance/model/user.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import "package:intl/intl.dart";
 
 class EmployeeDashboardScreen extends StatefulWidget {
   final VoidCallback onScanPressed;
+  final VoidCallback onProfilePressed;
   final int id;
   const EmployeeDashboardScreen({
     super.key,
     required this.onScanPressed,
+    required this.onProfilePressed,
     required this.id,
   });
 
@@ -35,7 +38,14 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   // Data State Variables
   User? _userData;
   bool _isLoading = true;
+  bool isInsideGeofence =
+      false; // null = loading, true = inside, false = outside
   String? _errorMessage;
+
+  double centerLat = 8.986273300000001000000000000000;
+  double centerLng = 38.788376000000000000000000000000;
+  double globalDistance = 0;
+  double allowedRadius = 150;
 
   @override
   void dispose() {
@@ -69,6 +79,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
         AttendanceService.getTodayStatus(widget.id),
         AttendanceService.getAllAttendance(widget.id),
         _fetchServerTime(),
+        _loadSettingsFromServer(),
+        _runLocationCheck(),
       ]);
 
       setState(() {
@@ -102,6 +114,23 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     } catch (e) {
       // Silently fail – fallback to local time is handled in getters
       debugPrint('Failed to fetch server time: $e');
+    }
+  }
+
+  Future<void> _loadSettingsFromServer() async {
+    try {
+      final data = await SettingsService.getSettings();
+      setState(() {
+        allowedRadius = (data['radius'] as num).toDouble();
+        centerLat =
+            double.tryParse(data['gpsLatitude'].toString()) ??
+            8.986202255702445;
+        centerLng =
+            double.tryParse(data['gpsLongitude'].toString()) ??
+            38.78797835605372;
+      });
+    } catch (e) {
+      //silently fail
     }
   }
 
@@ -154,6 +183,43 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   String getFormattedTime() {
     final now = _serverTimeEat ?? DateTime.now();
     return DateFormat("hh:mm a").format(now);
+  }
+
+  Future<void> _runLocationCheck() async {
+    bool result = await checkLocation();
+    if (mounted) {
+      setState(() {
+        isInsideGeofence = result;
+      });
+    }
+  }
+
+  Future<bool> checkLocation() async {
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      return false;
+    }
+
+    Position position = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+    );
+
+    double distance = Geolocator.distanceBetween(
+      centerLat,
+      centerLng,
+      position.latitude,
+      position.longitude,
+    );
+    setState(() {
+      globalDistance = distance;
+    });
+
+    return distance <= allowedRadius;
   }
 
   @override
@@ -220,7 +286,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                 children: [
                   Text(
                     'Good morning,',
-                    style: AppTextStyles.bodyRegular.copyWith(fontSize: 16),
+                    style: AppTextStyles.bodyRegular.copyWith(fontSize: 18),
                   ),
                   Text(
                     "${_userData?.firstName ?? "User"} ${_userData?.lastName ?? ""}",
@@ -228,11 +294,14 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                   ),
                 ],
               ),
-              CircleAvatar(
-                radius: 24,
-                backgroundImage: NetworkImage(
-                  _userData?.imageUrl ??
-                      "https://randomuser.me/api/portraits/men/20.jpg",
+              GestureDetector(
+                onTap: widget.onProfilePressed,
+                child: CircleAvatar(
+                  radius: 24,
+                  backgroundImage: NetworkImage(
+                    _userData?.imageUrl ??
+                        "https://randomuser.me/api/portraits/men/20.jpg",
+                  ),
                 ),
               ),
             ],
@@ -257,11 +326,20 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [Text(getFormattedDate()), Text(getFormattedTime())],
+              children: [
+                Text(
+                  getFormattedDate(),
+                  style: AppTextStyles.bodyRegular.copyWith(fontSize: 15),
+                ),
+                Text(
+                  getFormattedTime(),
+                  style: AppTextStyles.bodyRegular.copyWith(fontSize: 15),
+                ),
+              ],
             ),
           ),
 
-          const SizedBox(height: 40),
+          // const SizedBox(height: 40),
           const Spacer(),
 
           // Central Scan Button
@@ -273,18 +351,26 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                   animation: _animation,
                   builder: (context, child) {
                     return CustomPaint(
-                      painter: RipplePainter(_animation.value),
+                      painter: RipplePainter(_animation.value, hasCheckedIn),
                       size: const Size(210, 210),
                     );
                   },
                 ),
                 GestureDetector(
                   onTap: () {
-                    if (isCheckedIn) {
-                      _showCheckoutDialog();
-                    } else {
-                      widget.onScanPressed();
-                    }
+                    isInsideGeofence = false;
+                    isCheckedIn
+                        ? isInsideGeofence
+                              ? _showCheckoutDialog()
+                              : ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      "You're already outside the office range go back and try again",
+                                    ),
+                                    backgroundColor: AppColors.redLate,
+                                  ),
+                                )
+                        : widget.onScanPressed();
                   },
                   child: Container(
                     width: 150,
@@ -333,8 +419,8 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
           ),
 
           const Spacer(),
-          const SizedBox(height: 40),
 
+          // const SizedBox(height: 40),
           Text(
             "TODAY'S SUMMARY",
             style: AppTextStyles.label.copyWith(letterSpacing: 1.2),
@@ -546,12 +632,15 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
 class RipplePainter extends CustomPainter {
   final double radius;
-  RipplePainter(this.radius);
+  final bool checkedIn;
+  RipplePainter(this.radius, this.checkedIn);
 
   @override
   void paint(Canvas canvas, Size size) {
     Paint paint = Paint()
-      ..color = AppColors.primaryText.withOpacity(0.5)
+      ..color = checkedIn
+          ? AppColors.redLate.withOpacity(0.5)
+          : AppColors.primaryText.withOpacity(0.5)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
     canvas.drawCircle(size.center(Offset.zero), radius, paint);

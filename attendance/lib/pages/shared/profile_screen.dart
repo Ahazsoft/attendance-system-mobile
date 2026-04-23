@@ -1,6 +1,8 @@
 import 'package:attendance/db/employee_service.dart';
 import 'package:attendance/model/user.dart';
 import 'package:attendance/pages/shared/edit_profile_screen.dart';
+import 'package:attendance/pages/Auth/login.dart';
+import 'package:attendance/db/auth_service.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
 
@@ -142,7 +144,7 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
         ElevatedButton(
           onPressed: _navigateToEdit,
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF8D6E63),
+            backgroundColor: AppColors.primaryText,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8), // ← Less rounded (was 30)
             ),
@@ -249,7 +251,7 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
   Widget _infoTile(IconData icon, String label, String value) {
     return Row(
       children: [
-        Icon(icon, color: const Color(0xFF8D6E63), size: 20),
+        Icon(icon, color: AppColors.primaryText, size: 20),
         const SizedBox(width: 15),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -286,9 +288,12 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
             ),
             secondary: const Icon(
               Icons.notifications_none,
-              color: Color(0xFF8D6E63),
+              color: AppColors.primaryText,
             ),
-            activeColor: const Color(0xFF8D6E63),
+            activeThumbColor: AppColors.primaryText,
+            inactiveThumbColor: AppColors.primaryText,
+
+            // inactiveTrackColor: AppColors.primaryText.withOpacity(0.2),
             value: _notificationsEnabled,
             onChanged: (bool value) =>
                 setState(() => _notificationsEnabled = value),
@@ -298,12 +303,27 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
             child: Divider(height: 20),
           ),
           ListTile(
-            leading: const Icon(Icons.logout, color: Color(0xFF8D6E63)),
+            leading: const Icon(Icons.logout, color: AppColors.primaryText),
             title: const Text(
               "Logout",
               style: TextStyle(fontWeight: FontWeight.w500),
             ),
-            onTap: () {}, // Navigate to change password screen
+            onTap: () async {
+              try {
+                await AuthService.logout();
+                if (!mounted) return;
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginPage()),
+                  (route) => false,
+                );
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Logout failed: ${e.toString()}')),
+                );
+              }
+            },
           ),
         ],
       ),

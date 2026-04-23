@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://apple.com">
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
@@ -45,5 +45,13 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access to scan QR codes for attendance.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app needs location access to verify you are at the correct job site.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>This app uses the local network to discover nearby attendance terminals.</string>
 </dict>
 </plist>

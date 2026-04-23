@@ -2,6 +2,7 @@ import 'package:attendance/Pages/Auth/signup.dart';
 import 'package:attendance/db/auth_service.dart';
 import 'package:attendance/pages/Admin/home_screen.dart';
 import 'package:attendance/pages/Employee/home_screen.dart';
+import 'package:attendance/pages/Employee/pending_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:attendance/theme/appTheme.dart';
 
@@ -43,8 +44,8 @@ class LoginPageState extends State<LoginPage> {
         if (!mounted) return;
         bool isAdmin = response['user']['isAdmin'];
         int UserId = response['user']['id'].toInt();
-        print("userid : $UserId");
-        // bool isApproved = response['user']['isApproved'];
+        // print("userid : $UserId");
+        bool isApproved = response['user']['isApproved'];
 
         Navigator.pushReplacement(
           context,
@@ -52,7 +53,9 @@ class LoginPageState extends State<LoginPage> {
             builder: (context) => isAdmin
                 ? const AdminHomeScreen()
                 // : const EmployeeHomeScreen(),
-                : EmployeeHomeScreen(id: UserId),
+                : isApproved
+                ? EmployeeHomeScreen(id: UserId)
+                : EmployeePendingPage(),
           ),
         );
 

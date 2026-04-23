@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://apple.com">
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
@@ -28,5 +28,13 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+
+	
+	<key>NSCameraUsageDescription</key>
+	<string>Camera access is required for attendance verification.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Location access is required to verify check-in coordinates.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Local network access is required to sync with the attendance server.</string>
 </dict>
 </plist>

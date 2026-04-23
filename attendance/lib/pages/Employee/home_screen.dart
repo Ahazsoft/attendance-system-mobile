@@ -35,6 +35,11 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
             currentIndex = 1;
           });
         },
+        onProfilePressed: () {
+          setState(() {
+            currentIndex = 3;
+          });
+        },
         id: widget.id,
       ),
       ScannerScreen(
@@ -69,7 +74,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
         ),
         child: BottomNavigationBar(
           backgroundColor: Colors.white,
-          fixedColor: AppColors.primaryGreen,
+          fixedColor: AppColors.primaryColor,
           currentIndex: currentIndex,
           unselectedItemColor: Colors.grey.shade600,
           onTap: (index) => {
@@ -82,7 +87,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
               icon: Icon(PhosphorIcons.house()),
               activeIcon: Icon(
                 PhosphorIcons.house(),
-                color: AppColors.primaryGreen,
+                color: AppColors.primaryColor,
               ),
 
               label: 'Dashboard',
@@ -91,7 +96,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
               icon: Icon(PhosphorIcons.qrCode()),
               activeIcon: PhosphorIcon(
                 PhosphorIcons.qrCode(),
-                color: AppColors.primaryGreen,
+                color: AppColors.primaryColor,
               ),
               label: 'Scan',
             ),
@@ -99,7 +104,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
               icon: Icon(PhosphorIcons.clockCounterClockwise()),
               activeIcon: Icon(
                 PhosphorIcons.clockCounterClockwise(),
-                color: AppColors.primaryGreen,
+                color: AppColors.primaryColor,
               ),
               label: 'History',
             ),
@@ -107,7 +112,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
               icon: Icon(PhosphorIcons.user()),
               activeIcon: Icon(
                 PhosphorIcons.user(),
-                color: AppColors.primaryGreen,
+                color: AppColors.primaryColor,
               ),
               label: 'Profile',
             ),

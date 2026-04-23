@@ -2,6 +2,7 @@ import 'package:attendance/pages/Admin/dashboard_screen.dart';
 import 'package:attendance/pages/Admin/digital_ledger_screen.dart';
 import 'package:attendance/pages/Admin/settings_screen.dart';
 import 'package:attendance/pages/Admin/team_screen.dart';
+import 'package:attendance/pages/shared/profile_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:attendance/theme/appTheme.dart';
@@ -21,6 +22,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     const AdminDashboardScreen(),
     const DigitalLedgerScreen(),
     const TeamGroveScreen(), // Placeholder
+    const ProfileViewPage(id: 2),
     const OfficeSettingsScreen(),
   ];
 
@@ -52,22 +54,42 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           items: [
             BottomNavigationBarItem(
               icon: Icon(PhosphorIcons.chartBar()),
-              activeIcon: Icon(PhosphorIconsBold.chartBar),
+              activeIcon: Icon(
+                PhosphorIconsBold.chartBar,
+                color: AppColors.primaryColor,
+              ),
               label: 'Dashboard',
             ),
             BottomNavigationBarItem(
               icon: Icon(PhosphorIcons.bookOpen()),
-              activeIcon: Icon(PhosphorIconsBold.bookOpen),
+              activeIcon: Icon(
+                PhosphorIconsBold.bookOpen,
+                color: AppColors.primaryColor,
+              ),
               label: 'Ledger',
             ),
             BottomNavigationBarItem(
               icon: Icon(PhosphorIcons.usersThree()),
-              activeIcon: Icon(PhosphorIconsBold.usersThree),
+              activeIcon: Icon(
+                PhosphorIconsBold.usersThree,
+                color: AppColors.primaryColor,
+              ),
               label: 'Team',
             ),
             BottomNavigationBarItem(
+              icon: Icon(PhosphorIcons.user()),
+              activeIcon: Icon(
+                PhosphorIcons.user(),
+                color: AppColors.primaryColor,
+              ),
+              label: 'Profile',
+            ),
+            BottomNavigationBarItem(
               icon: Icon(PhosphorIcons.gear()),
-              activeIcon: Icon(PhosphorIconsBold.gear),
+              activeIcon: Icon(
+                PhosphorIconsBold.gear,
+                color: AppColors.primaryColor,
+              ),
               label: 'Settings',
             ),
           ],

@@ -4,7 +4,9 @@ import 'package:http/http.dart' as http;
 
 class AttendanceService {
   // static const String baseUrl = 'http://192.168.1.7:3001/api/v1/attendance';
-  static const String baseUrl = 'http://10.68.70.202:3001/api/v1/attendance';
+  // static const String baseUrl = 'http://10.68.70.202:3001/api/v1/attendance';
+  static const String baseUrl =
+      'https://attendance-backend.ahaz.io/api/v1/attendance';
 
   static Future<Map<String, dynamic>> checkIn({
     required int employeeId,
@@ -80,6 +82,11 @@ class AttendanceService {
 
   static Future<List<dynamic>> getAllAttendance(int id) async {
     final response = await http.get(Uri.parse('$baseUrl/all/$id'));
+    return jsonDecode(response.body);
+  }
+
+  static Future<List<dynamic>> getAllEmpAttendance() async {
+    final response = await http.get(Uri.parse('$baseUrl/getAll'));
     return jsonDecode(response.body);
   }
 

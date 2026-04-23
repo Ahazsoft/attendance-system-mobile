@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:attendance/model/user.dart';
 import 'package:attendance/db/employee_service.dart'; // Import the service
+import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -82,7 +83,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFDFBF7),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -125,7 +126,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     bottom: 0,
                     right: 0,
                     child: CircleAvatar(
-                      backgroundColor: Colors.brown,
+                      backgroundColor: AppColors.primaryText,
                       radius: 18,
                       child: IconButton(
                         icon: const Icon(
@@ -149,7 +150,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
             ElevatedButton(
               onPressed: _isLoading ? null : _handleSave,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF8D6E63),
+                backgroundColor: AppColors.primaryText,
                 minimumSize: const Size(double.infinity, 50),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
