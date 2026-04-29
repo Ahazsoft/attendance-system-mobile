@@ -1,8 +1,10 @@
 import 'package:attendance/db/attendance_service.dart';
 import 'package:attendance/db/settings.dart';
+import 'package:attendance/pages/skeleton/history_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shimmer/shimmer.dart';
 
 class HistoryScreen extends StatefulWidget {
   final int id;
@@ -167,7 +169,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return Shimmer.fromColors(
+        baseColor: Colors.grey.shade300,
+        highlightColor: Colors.grey.shade100,
+        child: const HistorySkeleton(),
+      );
     }
     if (error != null) {
       return Center(child: Text('Error: $error'));
