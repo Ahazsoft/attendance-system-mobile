@@ -3,11 +3,12 @@ import 'package:attendance/db/attendance_service.dart';
 import 'package:attendance/db/employee_service.dart';
 import 'package:attendance/db/settings.dart';
 import 'package:attendance/model/user.dart';
+import 'package:attendance/pages/skeleton/dashboard_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 import "package:intl/intl.dart";
+import 'package:shimmer/shimmer.dart';
 
 class EmployeeDashboardScreen extends StatefulWidget {
   final VoidCallback onScanPressed;
@@ -225,8 +226,10 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.primaryText),
+      return Shimmer.fromColors(
+        baseColor: Colors.grey.shade300,
+        highlightColor: Colors.grey.shade100,
+        child: const EmployeeDashboardSkeleton(),
       );
     }
 
@@ -396,9 +399,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
-                          isCheckedIn
-                              ? PhosphorIcons.signOut()
-                              : PhosphorIcons.qrCode(),
+                          isCheckedIn ? Icons.logout : Icons.login,
                           color: Colors.white,
                           size: 40,
                         ),
@@ -439,22 +440,22 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
               _buildSummaryCard(
                 'Check In Time',
                 checkInTimeDisplay,
-                PhosphorIconsBold.timer,
+                Icons.timer,
               ),
               _buildSummaryCard(
                 'Working for',
                 _workingFor,
-                PhosphorIconsBold.hourglassHigh,
+                Icons.hourglass_bottom_outlined,
               ),
               _buildSummaryCard(
                 'Check Out Time',
                 checkOutTimeDisplay,
-                PhosphorIconsBold.timer,
+                Icons.timer,
               ),
               _buildSummaryCard(
                 'Status',
                 statusText,
-                PhosphorIconsBold.presentationChart,
+                Icons.switch_account_sharp,
                 textColor: statusColor,
               ),
             ],

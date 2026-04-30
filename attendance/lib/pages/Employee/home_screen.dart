@@ -6,11 +6,8 @@ import 'package:attendance/pages/shared/profile_screen.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
 
-import 'package:phosphor_flutter/phosphor_flutter.dart';
-
 class EmployeeHomeScreen extends StatefulWidget {
   final int id;
-  // const EmployeeHomeScreen({super.key});
   const EmployeeHomeScreen({super.key, required this.id});
 
   @override
@@ -23,7 +20,6 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   @override
   void initState() {
     super.initState();
-    // print("EmployeeHomeScreen Init with : ${widget.id}");
   }
 
   @override
@@ -84,34 +80,28 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
           },
           items: [
             BottomNavigationBarItem(
-              icon: Icon(PhosphorIcons.house()),
+              icon: Icon(Icons.home_outlined),
               activeIcon: Icon(
-                PhosphorIcons.house(),
+                Icons.home_outlined,
                 color: AppColors.primaryColor,
               ),
 
               label: 'Dashboard',
             ),
             BottomNavigationBarItem(
-              icon: Icon(PhosphorIcons.qrCode()),
-              activeIcon: PhosphorIcon(
-                PhosphorIcons.qrCode(),
-                color: AppColors.primaryColor,
-              ),
+              icon: Icon(Icons.qr_code),
+              activeIcon: Icon(Icons.qr_code, color: AppColors.primaryColor),
               label: 'Scan',
             ),
             BottomNavigationBarItem(
-              icon: Icon(PhosphorIcons.clockCounterClockwise()),
-              activeIcon: Icon(
-                PhosphorIcons.clockCounterClockwise(),
-                color: AppColors.primaryColor,
-              ),
+              icon: Icon(Icons.history),
+              activeIcon: Icon(Icons.history, color: AppColors.primaryColor),
               label: 'History',
             ),
             BottomNavigationBarItem(
-              icon: Icon(PhosphorIcons.user()),
+              icon: Icon(Icons.person_outline),
               activeIcon: Icon(
-                PhosphorIcons.user(),
+                Icons.person_outline,
                 color: AppColors.primaryColor,
               ),
               label: 'Profile',

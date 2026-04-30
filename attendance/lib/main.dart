@@ -1,5 +1,4 @@
-import 'package:attendance/pages/Auth/login.dart';
-// import 'package:attendance/role_selection.dart';
+import 'package:attendance/role_selection.dart';
 import 'package:flutter/material.dart';
 
 void main() {
@@ -16,7 +15,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Attendance App',
       theme: ThemeData(colorScheme: .fromSeed(seedColor: Colors.deepPurple)),
-      home: LoginPage(),
+      home: SplashPage(),
       // home: RoleSelectionScreen(),
     );
   }

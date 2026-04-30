@@ -1,4 +1,5 @@
 import 'package:attendance/Pages/Auth/signup.dart';
+import 'package:attendance/db/auth_provider.dart';
 import 'package:attendance/db/auth_service.dart';
 import 'package:attendance/pages/Admin/home_screen.dart';
 import 'package:attendance/pages/Employee/home_screen.dart';
@@ -46,6 +47,9 @@ class LoginPageState extends State<LoginPage> {
         int UserId = response['user']['id'].toInt();
         // print("userid : $UserId");
         bool isApproved = response['user']['isApproved'];
+
+        // ★ Save to SharedPreferences
+        await AuthProvider.login(UserId, isAdmin, isApproved);
 
         Navigator.pushReplacement(
           context,

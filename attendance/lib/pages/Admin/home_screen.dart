@@ -4,7 +4,6 @@ import 'package:attendance/pages/Admin/settings_screen.dart';
 import 'package:attendance/pages/Admin/team_screen.dart';
 import 'package:attendance/pages/shared/profile_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:attendance/theme/appTheme.dart';
 
 class AdminHomeScreen extends StatefulWidget {
@@ -43,51 +42,52 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         ),
         child: BottomNavigationBar(
           backgroundColor: Colors.white,
-          fixedColor: AppColors.primaryGreen,
+          fixedColor: AppColors.primaryColor,
           currentIndex: _currentIndex,
-          onTap: (index) {
+          unselectedItemColor: Colors.grey.shade600,
+          onTap: (index) => {
             setState(() {
               _currentIndex = index;
-            });
+            }),
           },
-          type: BottomNavigationBarType.fixed, // Needed for 4+ items
+          // type: BottomNavigationBarType.fixed,
           items: [
             BottomNavigationBarItem(
-              icon: Icon(PhosphorIcons.chartBar()),
+              icon: Icon(Icons.dashboard_outlined),
               activeIcon: Icon(
-                PhosphorIconsBold.chartBar,
+                Icons.dashboard_outlined,
                 color: AppColors.primaryColor,
               ),
               label: 'Dashboard',
             ),
             BottomNavigationBarItem(
-              icon: Icon(PhosphorIcons.bookOpen()),
+              icon: Icon(Icons.note_alt_outlined),
               activeIcon: Icon(
-                PhosphorIconsBold.bookOpen,
+                Icons.note_alt_outlined,
                 color: AppColors.primaryColor,
               ),
               label: 'Ledger',
             ),
             BottomNavigationBarItem(
-              icon: Icon(PhosphorIcons.usersThree()),
+              icon: Icon(Icons.group_outlined),
               activeIcon: Icon(
-                PhosphorIconsBold.usersThree,
+                Icons.group_outlined,
                 color: AppColors.primaryColor,
               ),
               label: 'Team',
             ),
             BottomNavigationBarItem(
-              icon: Icon(PhosphorIcons.user()),
+              icon: Icon(Icons.person_outline_outlined),
               activeIcon: Icon(
-                PhosphorIcons.user(),
+                Icons.person_outline_outlined,
                 color: AppColors.primaryColor,
               ),
               label: 'Profile',
             ),
             BottomNavigationBarItem(
-              icon: Icon(PhosphorIcons.gear()),
+              icon: Icon(Icons.settings_outlined),
               activeIcon: Icon(
-                PhosphorIconsBold.gear,
+                Icons.settings_outlined,
                 color: AppColors.primaryColor,
               ),
               label: 'Settings',

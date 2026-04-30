@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:attendance/model/user.dart';
 import 'package:attendance/db/employee_service.dart'; // Import the service
+import 'package:attendance/pages/skeleton/edit_profile_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shimmer/shimmer.dart';
 
 class EditProfilePage extends StatefulWidget {
   final User user;
@@ -82,6 +84,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Shimmer.fromColors(
+        baseColor: Colors.grey.shade300,
+        highlightColor: Colors.grey.shade100,
+        child: EditProfileSkeleton(),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(

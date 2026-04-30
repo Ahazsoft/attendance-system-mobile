@@ -1,6 +1,6 @@
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+// import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 class EmployeeDashboardScreen extends StatefulWidget {
   final VoidCallback onScanPressed;
@@ -182,11 +182,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          PhosphorIcons.qrCode(),
-                          color: Colors.white,
-                          size: 40,
-                        ),
+                        Icon(Icons.qr_code, color: Colors.white, size: 40),
                         const SizedBox(height: 8),
                         Text(
                           'SCAN OUT',
@@ -219,21 +215,17 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
             crossAxisSpacing: 16,
             childAspectRatio: 1.5,
             children: [
-              _buildSummaryCard('Expected', '8h 00m', PhosphorIconsBold.timer),
-              _buildSummaryCard(
-                'This Week',
-                '24h 30m',
-                PhosphorIconsBold.trendUp,
-              ),
+              _buildSummaryCard('Expected', '8h 00m', Icons.timer),
+              _buildSummaryCard('This Week', '24h 30m', Icons.trending_up),
               _buildSummaryCard(
                 'On-time Streak',
                 '12 days',
-                PhosphorIconsBold.hourglassHigh,
+                Icons.hourglass_bottom_outlined,
               ),
               _buildSummaryCard(
                 'Status',
                 'On Time',
-                PhosphorIconsBold.presentationChart,
+                Icons.switch_account_outlined,
               ),
             ],
           ),

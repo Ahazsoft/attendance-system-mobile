@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:attendance/db/settings.dart';
+import 'package:attendance/pages/skeleton/settings_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'dart:io';
 import 'dart:typed_data';
@@ -13,6 +13,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shimmer/shimmer.dart';
 
 class OfficeSettingsScreen extends StatefulWidget {
   const OfficeSettingsScreen({super.key});
@@ -23,6 +24,7 @@ class OfficeSettingsScreen extends StatefulWidget {
 
 class _OfficeSettingsScreenState extends State<OfficeSettingsScreen> {
   bool _isFetching = true;
+  // ignore: unused_field
   bool _isSaving = false;
   double _radius = 150.0;
   TimeOfDay selectedTime = const TimeOfDay(hour: 9, minute: 0);
@@ -41,10 +43,6 @@ class _OfficeSettingsScreenState extends State<OfficeSettingsScreen> {
   void initState() {
     super.initState();
     _loadSettingsFromServer();
-    // latitudeController.text = "24.45";
-    // longitudeController.text = "24.54";
-
-    // bssidController.text = "AA:BB:CC:DD:EE:FF";
   }
 
   @override
@@ -186,8 +184,10 @@ class _OfficeSettingsScreenState extends State<OfficeSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isFetching) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.primaryGreen),
+      return Shimmer.fromColors(
+        baseColor: Colors.grey.shade300,
+        highlightColor: Colors.grey.shade100,
+        child: const SettingsSkeleton(),
       );
     }
     return SingleChildScrollView(
@@ -324,11 +324,7 @@ class _OfficeSettingsScreenState extends State<OfficeSettingsScreen> {
             children: [
               Row(
                 children: [
-                  Icon(
-                    PhosphorIconsBold.globeSimple,
-                    size: 18,
-                    color: AppColors.primaryGreen,
-                  ),
+                  Icon(Icons.public, size: 18, color: AppColors.primaryGreen),
                   const SizedBox(width: 8),
                   Text("GPS Coordinates", style: AppTextStyles.bodyBold),
                 ],
@@ -338,7 +334,7 @@ class _OfficeSettingsScreenState extends State<OfficeSettingsScreen> {
                 child: IconButton(
                   onPressed: _initializeLocation,
                   icon: const Icon(
-                    PhosphorIconsBold.crosshairSimple,
+                    Icons.gps_fixed_outlined,
                     size: 18,
                     color: AppColors.primaryText,
                   ),
@@ -422,11 +418,7 @@ class _OfficeSettingsScreenState extends State<OfficeSettingsScreen> {
         children: [
           Row(
             children: [
-              Icon(
-                PhosphorIconsBold.wifiHigh,
-                size: 18,
-                color: AppColors.primaryGreen,
-              ),
+              Icon(Icons.wifi, size: 18, color: AppColors.primaryGreen),
               const SizedBox(width: 8),
               Text("Office Wi-Fi", style: AppTextStyles.bodyBold),
             ],
@@ -474,7 +466,7 @@ class _OfficeSettingsScreenState extends State<OfficeSettingsScreen> {
           Row(
             children: [
               Icon(
-                PhosphorIconsBold.wifiHigh,
+                Icons.security_rounded,
                 size: 18,
                 color: AppColors.primaryGreen,
               ),
@@ -525,7 +517,7 @@ class _OfficeSettingsScreenState extends State<OfficeSettingsScreen> {
           Row(
             children: [
               Icon(
-                PhosphorIconsBold.clock,
+                Icons.timer_outlined,
                 size: 18,
                 color: AppColors.primaryGreen,
               ),
