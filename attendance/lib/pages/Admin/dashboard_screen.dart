@@ -3,10 +3,12 @@ import 'package:attendance/db/attendance_service.dart';
 import 'package:attendance/db/employee_service.dart';
 import 'package:attendance/db/settings.dart';
 import 'package:attendance/model/user.dart';
+import 'package:attendance/pages/skeleton/admin_dashboard_skeleton.dart';
 import 'package:flutter/material.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import 'package:shimmer/shimmer.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -269,8 +271,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.primaryText),
+      return Shimmer.fromColors(
+        baseColor: Colors.grey.shade300,
+        highlightColor: Colors.grey.shade100,
+        child: const AdminDashboardSkeleton(),
       );
     }
 

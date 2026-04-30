@@ -1,5 +1,11 @@
-import 'package:attendance/theme/appTheme.dart';
+import 'dart:async';
+import 'package:attendance/db/attendance_service.dart';
+import 'package:attendance/db/employee_service.dart';
+import 'package:attendance/model/user.dart';
+import 'package:attendance/pages/skeleton/team_skeleton.dart';
 import 'package:flutter/material.dart';
+import 'package:attendance/theme/appTheme.dart';
+import 'package:intl/intl.dart';
 
 class TeamGroveScreen extends StatefulWidget {
   const TeamGroveScreen({super.key});
@@ -9,68 +15,147 @@ class TeamGroveScreen extends StatefulWidget {
 }
 
 class _TeamGroveScreenState extends State<TeamGroveScreen> {
-  // Mock data for the team list
-  final List<Map<String, dynamic>> teamMembers = [
-    {
-      'name': 'Sarah Johnson',
-      'role': 'Frontend Developer',
-      'streak': '12d',
-      'avg': '8.2h',
-      'status': Colors.green,
-      'hours': [8.0, 7.5, 8.0, 8.0, 7.8], // Mon - Fri
-    },
-    {
-      'name': 'Ahmed Ali',
-      'role': 'Backend Developer',
-      'streak': '8d',
-      'avg': '8.5h',
-      'status': Colors.green,
-      'hours': [8.0, 8.0, 8.0, 8.0, 8.0],
-    },
-    {
-      'name': 'Maya Chen',
-      'role': 'Designer',
-      'streak': '3d',
-      'avg': '7.8h',
-      'status': Colors.green,
-      'hours': [7.0, 8.0, 6.5, 8.0, 7.2],
-    },
-    {
-      'name': 'James Okafor',
-      'role': 'Project Manager',
-      'streak': '15d',
-      'avg': '8h',
-      'status': Colors.orange,
-      'hours': [8.0, 4.0, 8.0, 8.0, 8.0], // Partial day on Tuesday
-    },
-    {
-      'name': 'Priya Sharma',
-      'role': 'QA Engineer',
-      'streak': '10d',
-      'avg': '8.1h',
-      'status': Colors.green,
-      'hours': [8.0, 8.0, 7.5, 8.0, 8.0],
-    },
-    {
-      'name': 'Luca Rossi',
-      'role': 'DevOps',
-      'streak': '2d',
-      'avg': '7.5h',
-      'status': Colors.green,
-      'hours': [6.0, 7.0, 8.0, 7.0, 6.5],
-    },
-    {
-      'name': 'Emma Wilson',
-      'role': 'Marketing',
-      'streak': '0d',
-      'avg': '7.9h',
-      'status': Colors.grey,
-      'hours': [0.0, 0.0, 8.0, 8.0, 7.5], // Absent Mon-Tue
-    },
-  ];
+  bool _isLoading = true;
+  String? _errorMessage;
+  List<Map<String, dynamic>> _teamMembers = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      // 1. Fetch all users
+      final List<User> users = await EmployeeService.fetchAllUsers();
+
+      // Filter out any user without an id (safety)
+      final validUsers = users.where((u) => u.id != null).toList();
+
+      final now = DateTime.now().toLocal(); // work in local time
+      final weekday = now.weekday; // 1=Mon … 7=Sun
+      final monday = now.subtract(Duration(days: weekday - 1));
+      final thisWeekDates = List.generate(
+        5,
+        (i) => monday.add(Duration(days: i)),
+      ); // Mon–Fri
+
+      final List<Map<String, dynamic>> processed = [];
+
+      for (final user in validUsers) {
+        final attendanceRecords = await AttendanceService.getAllAttendance(
+          user.id!,
+        );
+
+        // Index records by local date string "yyyy-MM-dd"
+        final Map<String, Map<String, dynamic>> byDate = {};
+        for (final record in attendanceRecords) {
+          final checkInStr = record['checkInTime'] as String?;
+          if (checkInStr == null || checkInStr.isEmpty) continue;
+
+          final checkInUtc = DateTime.parse(checkInStr);
+          final dateKey = DateFormat('yyyy-MM-dd').format(checkInUtc.toLocal());
+          // Use first record per day (no double‑counting)
+          if (!byDate.containsKey(dateKey)) {
+            byDate[dateKey] = record as Map<String, dynamic>;
+          }
+        }
+
+        // Compute hours for Mon–Fri of the current week
+        final List<double> weekHours = [];
+        for (final date in thisWeekDates) {
+          final key = DateFormat('yyyy-MM-dd').format(date);
+          if (byDate.containsKey(key)) {
+            final record = byDate[key]!;
+            final checkIn = DateTime.parse(record['checkInTime'] as String);
+            final checkOutStr =
+                record['checkOutTime'] as String?; // camelCase, nullable
+            double hours = 0;
+            if (checkOutStr != null && checkOutStr.isNotEmpty) {
+              final checkOut = DateTime.parse(checkOutStr);
+              hours = checkOut.difference(checkIn).inMinutes / 60.0;
+            }
+            weekHours.add(hours);
+          } else {
+            weekHours.add(0.0);
+          }
+        }
+
+        // Today’s status colour
+        final todayHours = weekHours[now.weekday - 1]; // Mon=0
+        Color status;
+        if (todayHours >= 8) {
+          status = Colors.green;
+        } else if (todayHours > 0) {
+          status = Colors.orange;
+        } else {
+          status = Colors.grey;
+        }
+
+        // Average hours (just for display)
+        final sum = weekHours.fold(0.0, (prev, e) => prev + e);
+        final avgHours = weekHours.any((h) => h > 0)
+            ? sum / weekHours.length
+            : 0;
+
+        // Days with any worked hours (used for the “Avg Rate” below)
+        final daysWorked = weekHours.where((h) => h > 0).length;
+
+        // Streak is not recorded for now – placeholder
+        // final streak = _calculateStreak(byDate, now);
+
+        processed.add({
+          'id': user.id,
+          'name': '${user.firstName} ${user.lastName}',
+          'role': user.position ?? 'Team Member',
+          'streak': '0d', // placeholder since streak is not recorded
+          'avg': '${avgHours.toStringAsFixed(1)}h',
+          'status': status,
+          'hours': weekHours,
+          'daysWorked': daysWorked,
+        });
+      }
+
+      setState(() {
+        _teamMembers = processed;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Streak method removed – not used for now
+  /*
+  int _calculateStreak(
+    Map<String, Map<String, dynamic>> byDate,
+    DateTime today,
+  ) {
+    // ... old code
+  }
+  */
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return TeamGroveSkeleton();
+    }
+    if (_errorMessage != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'Error: $_errorMessage',
+            style: AppTextStyles.bodyRegular,
+          ),
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -82,52 +167,75 @@ class _TeamGroveScreenState extends State<TeamGroveScreen> {
               Text('Team', style: AppTextStyles.label),
               const Text('Your Grove', style: AppTextStyles.heading1),
               const SizedBox(height: 24),
-
-              // 1. Top Stats Row
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildSummaryCard(
-                      '8',
-                      'Active',
-                      AppColors.lightGreen,
-                      Colors.green,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildSummaryCard(
-                      '2',
-                      'Absent',
-                      AppColors.lightRed,
-                      AppColors.redLate,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildSummaryCard(
-                      '88%',
-                      'Avg Rate',
-                      AppColors.cardWhite,
-                      AppColors.primaryText,
-                    ),
-                  ),
-                ],
-              ),
+              _buildSummaryRow(),
             ],
           ),
         ),
         const SizedBox(height: 24),
-
-        // 2. Team Member List
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            itemCount: teamMembers.length,
-            itemBuilder: (context, index) {
-              final member = teamMembers[index];
-              return _buildMemberCard(member);
-            },
+          child: _teamMembers.isEmpty
+              ? const Center(
+                  child: Text(
+                    'No team members found',
+                    style: AppTextStyles.bodyRegular,
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  itemCount: _teamMembers.length,
+                  itemBuilder: (context, index) =>
+                      _buildMemberCard(_teamMembers[index]),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryRow() {
+    final activeCount = _teamMembers
+        .where(
+          (m) => m['status'] == Colors.green || m['status'] == Colors.orange,
+        )
+        .length;
+    final absentCount = _teamMembers
+        .where((m) => m['status'] == Colors.grey)
+        .length;
+
+    // Average attendance rate: for each member, daysWorked/5, then average
+    double avgAttendanceRate = 0;
+    if (_teamMembers.isNotEmpty) {
+      final totalRate = _teamMembers
+          .map((m) => (m['daysWorked'] as int) / 5.0)
+          .reduce((a, b) => a + b);
+      avgAttendanceRate = (totalRate / _teamMembers.length) * 100;
+    }
+
+    return Row(
+      children: [
+        Expanded(
+          child: _buildSummaryCard(
+            activeCount.toString(),
+            'Active',
+            AppColors.lightGreen,
+            Colors.green,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildSummaryCard(
+            absentCount.toString(),
+            'Absent',
+            AppColors.lightRed,
+            AppColors.redLate,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildSummaryCard(
+            '${avgAttendanceRate.toStringAsFixed(0)}%',
+            'Avg Rate',
+            AppColors.cardWhite,
+            AppColors.primaryText,
           ),
         ),
       ],
@@ -167,17 +275,14 @@ class _TeamGroveScreenState extends State<TeamGroveScreen> {
       ),
       child: Row(
         children: [
-          // Avatar with Initial
           CircleAvatar(
             backgroundColor: AppColors.background,
             child: Text(
-              member['name'].substring(0, 1),
+              (member['name'] as String).substring(0, 1),
               style: AppTextStyles.bodyBold,
             ),
           ),
           const SizedBox(width: 16),
-
-          // Info Column
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -185,24 +290,31 @@ class _TeamGroveScreenState extends State<TeamGroveScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(member['name'], style: AppTextStyles.bodyBold),
+                    Flexible(
+                      child: Text(
+                        member['name'],
+                        style: AppTextStyles.bodyBold,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
                   ],
                 ),
                 Text(member['role'], style: AppTextStyles.label),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Icon(
-                      Icons.energy_savings_leaf_outlined,
-                      color: AppColors.primaryGreen,
-                      size: 14,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${member['streak']} streak',
-                      style: AppTextStyles.label.copyWith(fontSize: 11),
-                    ),
-                    const SizedBox(width: 12),
+                    // const Icon(
+                    //   Icons.energy_savings_leaf_outlined,
+                    //   color: AppColors.primaryGreen,
+                    //   size: 14,
+                    // ),
+                    // const SizedBox(width: 4),
+                    // Text(
+                    //   '${member['streak']} streak',
+                    //   style: AppTextStyles.label.copyWith(fontSize: 11),
+                    // ),
+                    // const SizedBox(width: 12),
                     const Icon(Icons.schedule, color: Colors.orange, size: 14),
                     const SizedBox(width: 4),
                     Text(
@@ -215,8 +327,6 @@ class _TeamGroveScreenState extends State<TeamGroveScreen> {
             ),
           ),
           const SizedBox(width: 12),
-
-          // Mini Indicator Chart (Represented by small vertical bars)
           _buildMiniChart(member),
         ],
       ),
@@ -224,43 +334,52 @@ class _TeamGroveScreenState extends State<TeamGroveScreen> {
   }
 
   Widget _buildMiniChart(Map<String, dynamic> member) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Icon(Icons.circle, color: member['status'], size: 10),
-        SizedBox(height: 25),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: List.generate(member['hours'].length, (index) {
-            final double dayHours = member['hours'][index];
+    final List<double> hours = (member['hours'] as List).cast<double>();
+    const double maxDisplayHours = 8.0;
+    const double maxBarHeight = 24.0;
+    const double minBarHeight = 4.0;
 
-            double height;
+    return SizedBox(
+      height: 40, // <-- fixed height to prevent layout errors
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Icon(Icons.circle, color: member['status'], size: 10),
+          // No Spacer needed now – spaceBetween will distribute the remaining
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: List.generate(hours.length, (index) {
+              final h = hours[index];
+              double barHeight;
+              Color barColor;
 
-            if (dayHours == 0) {
-              // If hours is 0 use 10
-              height = 10.0;
-            } else if (dayHours >= 8) {
-              // 8 hours and above use 24
-              height = 24.0;
-            } else {
-              // Otherwise use the % logic for all others
-              height = 10.0 + (index * 2) % 15;
-            }
-            return Container(
-              width: 4,
-              height: height,
-              margin: const EdgeInsets.only(left: 2),
-              decoration: BoxDecoration(
-                color: height == 24.0
-                    ? AppColors.primaryGreen.withOpacity(0.6)
-                    : AppColors.primaryGreen.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            );
-          }),
-        ),
-      ],
+              if (h <= 0) {
+                barHeight = minBarHeight;
+                barColor = Colors.grey.shade300;
+              } else if (h >= maxDisplayHours) {
+                barHeight = maxBarHeight;
+                barColor = AppColors.primaryGreen;
+              } else {
+                barHeight =
+                    minBarHeight +
+                    (h / maxDisplayHours) * (maxBarHeight - minBarHeight);
+                barColor = AppColors.primaryGreen.withOpacity(0.4);
+              }
+
+              return Container(
+                width: 4,
+                height: barHeight,
+                margin: const EdgeInsets.only(left: 2),
+                decoration: BoxDecoration(
+                  color: barColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
     );
   }
 }

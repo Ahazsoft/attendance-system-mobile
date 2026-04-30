@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:attendance/db/settings.dart';
+import 'package:attendance/pages/skeleton/settings_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
 
@@ -12,6 +13,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shimmer/shimmer.dart';
 
 class OfficeSettingsScreen extends StatefulWidget {
   const OfficeSettingsScreen({super.key});
@@ -182,8 +184,10 @@ class _OfficeSettingsScreenState extends State<OfficeSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isFetching) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.primaryGreen),
+      return Shimmer.fromColors(
+        baseColor: Colors.grey.shade300,
+        highlightColor: Colors.grey.shade100,
+        child: const SettingsSkeleton(),
       );
     }
     return SingleChildScrollView(

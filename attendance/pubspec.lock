@@ -174,14 +174,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  flutter_hooks:
-    dependency: "direct main"
-    description:
-      name: flutter_hooks
-      sha256: "8ae1f090e5f4ef5cfa6670ce1ab5dddadd33f3533a7f9ba19d9f958aa2a89f42"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.21.3+1"
   flutter_lints:
     dependency: "direct dev"
     description:
@@ -608,14 +600,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.2"
-  phosphor_flutter:
-    dependency: "direct main"
-    description:
-      name: phosphor_flutter
-      sha256: "8a14f238f28a0b54842c5a4dc20676598dd4811fcba284ed828bd5a262c11fde"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.1.0"
   platform:
     dependency: transitive
     description:

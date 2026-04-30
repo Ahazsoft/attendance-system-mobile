@@ -1,8 +1,11 @@
+// ignore_for_file: deprecated_member_use
+
+import 'package:attendance/db/auth_provider.dart';
+import 'package:attendance/db/auth_service.dart';
 import 'package:attendance/db/employee_service.dart';
 import 'package:attendance/model/user.dart';
 import 'package:attendance/pages/shared/edit_profile_screen.dart';
 import 'package:attendance/pages/Auth/login.dart';
-import 'package:attendance/db/auth_service.dart';
 import 'package:attendance/pages/skeleton/profile_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
@@ -17,15 +20,6 @@ class ProfileViewPage extends StatefulWidget {
 }
 
 class _ProfileViewPageState extends State<ProfileViewPage> {
-  final User _currentUser = User(
-    id: 1,
-    firstName: 'Temp',
-    lastName: 'Temp',
-    email: 'temp',
-    isAdmin: false,
-    isApproved: true,
-    streak: 0,
-  );
   bool _notificationsEnabled = false;
   // Data State Variables
   User? _userData;
@@ -43,7 +37,7 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
     final updatedUser = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => EditProfilePage(user: _userData ?? _currentUser),
+        builder: (context) => EditProfilePage(user: _userData!),
       ),
     );
 
@@ -79,15 +73,10 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Scaffold(
-        backgroundColor: const Color(0xFFFDFBF7),
-        body: Shimmer.fromColors(
-          baseColor: Colors.grey.shade300,
-          highlightColor: Colors.grey.shade100,
-          child: const SingleChildScrollView(
-            child: ProfileSkeletonContent(), // ← extract non‑Scaffold part
-          ),
-        ),
+      return Shimmer.fromColors(
+        baseColor: Colors.grey.shade300,
+        highlightColor: Colors.grey.shade100,
+        child: ProfileSkeletonContent(), // ← extract non‑Scaffold part
       );
     }
 
@@ -319,7 +308,10 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
             ),
             onTap: () async {
               try {
+                await AuthProvider.logout();
+
                 await AuthService.logout();
+
                 if (!mounted) return;
                 Navigator.pushAndRemoveUntil(
                   context,
