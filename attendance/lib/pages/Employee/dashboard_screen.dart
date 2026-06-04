@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:attendance/db/attendance_service.dart';
 import 'package:attendance/db/employee_service.dart';
 import 'package:attendance/db/settings.dart';
@@ -7,13 +8,14 @@ import 'package:attendance/pages/skeleton/dashboard_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import "package:intl/intl.dart";
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
 
 class EmployeeDashboardScreen extends StatefulWidget {
   final VoidCallback onScanPressed;
   final VoidCallback onProfilePressed;
-  final int id;
+  final String id;
   const EmployeeDashboardScreen({
     super.key,
     required this.onScanPressed,
@@ -36,17 +38,76 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   DateTime? _serverTime;
   DateTime? _serverTimeEat;
   Timer? _serverTimeTimer;
-  // Data State Variables
-  User? _userData;
+  int _maxCheckins = 3;
+
+  String? fullName;
+  String? imageUrl;
   bool _isLoading = true;
-  bool isInsideGeofence =
-      false; // null = loading, true = inside, false = outside
+  bool isInsideGeofence = false; // only updated at checkout
   String? _errorMessage;
 
-  double centerLat = 8.986273300000001000000000000000;
-  double centerLng = 38.788376000000000000000000000000;
-  double globalDistance = 0;
+  double centerLat = 8.986273300000001;
+  double centerLng = 38.788376000000000;
   double allowedRadius = 150;
+
+  // Cache helpers
+  static const String _cacheKeyPrefix = 'dashboard_cache_';
+  String get _cacheKey => _cacheKeyPrefix + widget.id;
+
+  String _todayEatDateString() {
+    final now = DateTime.now().toUtc().add(const Duration(hours: 3));
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<Map<String, dynamic>?> _readCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getString(_cacheKey);
+      if (json != null) return jsonDecode(json) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('Dashboard cache read error: $e');
+    }
+    return null;
+  }
+
+  Future<void> _writeCache({
+    required User user,
+    required Map<String, dynamic> todayData,
+    required Map<String, dynamic> settings,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final payload = jsonEncode({
+        'date': _todayEatDateString(),
+        'user': user.fullName,
+        'userImageUrl': user.imageUrl ?? '',
+        'todayData': todayData,
+        'settings': settings,
+      });
+      await prefs.setString(_cacheKey, payload);
+    } catch (e) {
+      debugPrint('Dashboard cache write error: $e');
+    }
+  }
+
+  /// Wrap async actions with timing log.
+  Future<T> _timeAction<T>(String name, Future<T> Function() action) async {
+    final sw = Stopwatch()..start();
+    try {
+      final result = await action();
+      sw.stop();
+      debugPrint(
+        'DashboardPage computation: $name : ${sw.elapsedMilliseconds}ms',
+      );
+      return result;
+    } catch (e) {
+      sw.stop();
+      debugPrint(
+        'DashboardPage computation: $name : failed after ${sw.elapsedMilliseconds}ms',
+      );
+      rethrow;
+    }
+  }
 
   @override
   void dispose() {
@@ -60,114 +121,265 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   void initState() {
     super.initState();
     _setupAnimation();
-    _refreshAllData();
+    _loadData(); // cache-first initial load
+
     _statsTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
       if (mounted) _calculateWorkingTime();
     });
-    // Refresh server time every minute to keep display accurate
     _serverTimeTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
-      _fetchServerTime();
+      _fetchServerTime(); // always fetch server time separately
     });
   }
 
-  Future<void> _refreshAllData() async {
+  // ---------------------------------------------------------------------------
+  // Data loading – cache-first then server
+  // ---------------------------------------------------------------------------
+  Future<void> _loadData() async {
+    final cached = await _readCache();
+    if (cached != null && cached['date'] == _todayEatDateString()) {
+      try {
+        setState(() {
+          fullName = cached['user'];
+          imageUrl = cached['userImageUrl'];
+          _todayData = cached['todayData'] as Map<String, dynamic>;
+          final settings = cached['settings'] as Map<String, dynamic>;
+          allowedRadius = (settings['radius'] as num?)?.toDouble() ?? 150;
+          _maxCheckins = (settings['NumberofCheckin'] as num?)?.toInt() ?? 3;
+          centerLat =
+              double.tryParse(settings['gpsLatitude']?.toString() ?? '') ??
+              8.986202255702445;
+          centerLng =
+              double.tryParse(settings['gpsLongitude']?.toString() ?? '') ??
+              38.78797835605372;
+          _isLoading = false;
+          _errorMessage = null;
+        });
+        _calculateWorkingTime();
+        _fetchServerTime();
+        return;
+      } catch (e) {
+        debugPrint('Cache parse failed, will refresh: $e');
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_cacheKey);
+      }
+    }
+    await _forceRefresh();
+  }
+
+  /// Always fetches fresh data from server and overwrites cache.
+  Future<void> _forceRefresh() async {
+    final totalSw = Stopwatch()..start();
     try {
       setState(() => _isLoading = true);
 
-      // Fetch all required data points in parallel
       final results = await Future.wait([
-        EmployeeService.fetchUserById(widget.id),
-        AttendanceService.getTodayStatus(widget.id),
-        AttendanceService.getAllAttendance(widget.id),
-        _fetchServerTime(),
-        _loadSettingsFromServer(),
-        _runLocationCheck(),
+        _timeAction(
+          'fetchUserById',
+          () => EmployeeService.fetchUserById(widget.id),
+        ),
+        _timeAction(
+          'getTodayStatus',
+          () => AttendanceService.getTodayStatus(widget.id),
+        ),
+        _timeAction('fetchServerTime', () => _fetchServerTimeValue()),
+        _timeAction('loadSettings', () => _loadSettingsFromServerValue()),
       ]);
 
+      final user = results[0] as User;
+      final todayData = results[1] as Map<String, dynamic>;
+      final serverTimeUtc = results[2] as DateTime?;
+      final settings = results[3] as Map<String, dynamic>;
+
       setState(() {
-        _userData = results[0] as User;
-        _todayData = results[1] as Map<String, dynamic>;
+        _todayData = todayData;
+        if (serverTimeUtc != null) {
+          _serverTime = serverTimeUtc;
+          _serverTimeEat = serverTimeUtc.add(const Duration(hours: 3));
+        }
+        allowedRadius = (settings['radius'] as num?)?.toDouble() ?? 150;
+        _maxCheckins = (settings['NumberofCheckin'] as num?)?.toInt() ?? 3;
+        centerLat =
+            double.tryParse(settings['gpsLatitude']?.toString() ?? '') ??
+            8.986202255702445;
+        centerLng =
+            double.tryParse(settings['gpsLongitude']?.toString() ?? '') ??
+            38.78797835605372;
         _isLoading = false;
         _errorMessage = null;
       });
 
       _calculateWorkingTime();
+      _writeCache(user: user, todayData: todayData, settings: settings);
     } catch (e) {
+      debugPrint("Dashboard force refresh error: $e");
       setState(() {
         _errorMessage = e.toString();
         _isLoading = false;
       });
+    } finally {
+      totalSw.stop();
+      debugPrint(
+        'DashboardPage: force refresh total: ${totalSw.elapsedMilliseconds}ms',
+      );
+    }
+  }
+
+  /// Public method to be called after check‑in/check‑out actions.
+  void forceRefresh() {
+    _forceRefresh();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Isolated data-fetching helpers
+  // ---------------------------------------------------------------------------
+  Future<DateTime?> _fetchServerTimeValue() async {
+    try {
+      return await SettingsService.getServerTime();
+    } catch (e) {
+      debugPrint('Failed to fetch server time: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> _loadSettingsFromServerValue() async {
+    try {
+      return await SettingsService.getSettings();
+    } catch (e) {
+      debugPrint('Failed to load settings: $e');
+      // Return default settings if fetch fails
+      return {
+        'radius': 150,
+        'NumberofCheckin': 3,
+        'gpsLatitude': '8.986202255702445',
+        'gpsLongitude': '38.78797835605372',
+      };
     }
   }
 
   Future<void> _fetchServerTime() async {
-    try {
-      final serverTimeUtc = await SettingsService.getServerTime();
-
-      final serverTimeEat = serverTimeUtc.add(const Duration(hours: 3));
-
-      if (mounted) {
-        setState(() {
-          _serverTime = serverTimeUtc;
-          _serverTimeEat = serverTimeEat;
-        });
-      }
-    } catch (e) {
-      // Silently fail – fallback to local time is handled in getters
-      debugPrint('Failed to fetch server time: $e');
-    }
-  }
-
-  Future<void> _loadSettingsFromServer() async {
-    try {
-      final data = await SettingsService.getSettings();
+    final time = await _fetchServerTimeValue();
+    if (mounted && time != null) {
       setState(() {
-        allowedRadius = (data['radius'] as num).toDouble();
-        centerLat =
-            double.tryParse(data['gpsLatitude'].toString()) ??
-            8.986202255702445;
-        centerLng =
-            double.tryParse(data['gpsLongitude'].toString()) ??
-            38.78797835605372;
+        _serverTime = time;
+        _serverTimeEat = time.add(const Duration(hours: 3));
       });
-    } catch (e) {
-      //silently fail
     }
   }
 
-  void _calculateWorkingTime() {
-    if (_todayData?['status'] == 'checked_in' &&
-        _todayData?['data'] != null &&
-        _serverTime != null) {
-      // 1. Parse check-in as UTC
-      final DateTime checkInUtc = DateTime.parse(
-        _todayData!['data']['checkInTime'],
+  // ---------------------------------------------------------------------------
+  // Helpers for attendance data
+  // ---------------------------------------------------------------------------
+  List<Map<String, dynamic>> get _todayAttendances {
+    final data = _todayData?['data'];
+    if (data is List) return data.cast<Map<String, dynamic>>();
+    return [];
+  }
+
+  Map<String, dynamic>? get _activeAttendance {
+    for (var entry in _todayAttendances) {
+      if (entry['isCheckedIn'] == true) return entry;
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? get _inActiveAttendance =>
+      _activeAttendance; // alias, kept for clarity
+
+  int get _todayCheckinCount => _todayAttendances.length;
+
+  bool get _canCheckIn =>
+      _activeAttendance == null && _todayCheckinCount < _maxCheckins;
+
+  // ---------------------------------------------------------------------------
+  // Geolocation (only called at checkout time)
+  // ---------------------------------------------------------------------------
+  Future<bool> _checkLocation() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return false;
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
       );
 
-      // 2. Ensure server time is UTC (CRITICAL)
-      final DateTime currentUtc = _serverTime!;
-
-      // 3. Compute difference in UTC
-      final Duration diff = currentUtc.difference(checkInUtc);
-
-      // 4. Prevent negative duration (clock sync issues / edge cases)
-      if (diff.isNegative) {
-        debugPrint('Negative duration detected. Skipping...');
-        return;
-      }
-
-      debugPrint('Check-in (UTC): $checkInUtc');
-      debugPrint('Current (UTC): $currentUtc');
-      debugPrint('Working duration: ${diff.inHours}h ${diff.inMinutes % 60}m');
-
-      setState(() {
-        _workingFor = "${diff.inHours}h ${diff.inMinutes % 60}m";
-      });
-    } else {
-      setState(() => _workingFor = "0h 0m");
+      double distance = Geolocator.distanceBetween(
+        centerLat,
+        centerLng,
+        position.latitude,
+        position.longitude,
+      );
+      return distance <= allowedRadius;
+    } catch (e) {
+      debugPrint('Location check failed: $e');
+      return false;
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Working time calculation
+  // ---------------------------------------------------------------------------
+  void _calculateWorkingTime() {
+    final sw = Stopwatch()..start();
+    if (_todayData?['status'] != 'checked_in' || _serverTime == null) {
+      setState(() => _workingFor = "0h 0m");
+      sw.stop();
+      debugPrint(
+        '_calculateWorkingTime (no data): ${sw.elapsedMilliseconds}ms',
+      );
+      return;
+    }
+
+    final attendances = _todayAttendances;
+    if (attendances.isEmpty) {
+      setState(() => _workingFor = "0h 0m");
+      sw.stop();
+      debugPrint('_calculateWorkingTime (empty): ${sw.elapsedMilliseconds}ms');
+      return;
+    }
+
+    double totalMinutes = 0;
+    final nowUtc = _serverTime!;
+
+    for (var att in attendances) {
+      final checkIn = DateTime.tryParse(att['checkInTime'] ?? '');
+      final checkOut = DateTime.tryParse(att['checkOutTime'] ?? '');
+      if (checkIn == null) continue;
+
+      if (checkOut != null) {
+        if (att['workingHours'] != null) {
+          totalMinutes += (att['workingHours'] as num).toDouble() * 60;
+        } else {
+          final diff = checkOut.difference(checkIn);
+          if (!diff.isNegative) totalMinutes += diff.inMinutes;
+        }
+      } else {
+        final diff = nowUtc.difference(checkIn);
+        if (!diff.isNegative) totalMinutes += diff.inMinutes;
+      }
+    }
+
+    final hours = totalMinutes ~/ 60;
+    final minutes = (totalMinutes % 60).round();
+    setState(() {
+      _workingFor = "${hours}h ${minutes}m";
+    });
+    sw.stop();
+    debugPrint(
+      '_calculateWorkingTime (${attendances.length} records): ${sw.elapsedMilliseconds}ms',
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI helpers
+  // ---------------------------------------------------------------------------
   void _setupAnimation() {
     _controller = AnimationController(
       duration: const Duration(seconds: 2),
@@ -186,43 +398,156 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     return DateFormat("hh:mm a").format(now);
   }
 
-  Future<void> _runLocationCheck() async {
-    bool result = await checkLocation();
-    if (mounted) {
-      setState(() {
-        isInsideGeofence = result;
-      });
+  String get greeting {
+    final now = _serverTimeEat ?? DateTime.now();
+    final hour = now.hour;
+    if (hour >= 6 && hour < 12) return 'Good morning,';
+    if (hour >= 12 && hour < 18) return 'Good afternoon,';
+    return 'Good evening,';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Checkout dialog
+  // ---------------------------------------------------------------------------
+  void _showCheckoutDialog() {
+    final active = _inActiveAttendance;
+    if (active == null || active['isCheckedIn'] != true) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.logout,
+                    color: Colors.redAccent,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text("Check Out", style: AppTextStyles.heading2),
+                const SizedBox(height: 8),
+                Text(
+                  "Are you ready to check out?",
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.bodyRegular,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          try {
+                            final attendanceId = active['id'];
+                            await _timeAction(
+                              'checkOut',
+                              () => AttendanceService.checkOut(attendanceId),
+                            );
+                            await _forceRefresh();
+                          } catch (e) {
+                            debugPrint("Checkout error: $e");
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text("Checkout failed")),
+                              );
+                            }
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          "Check Out",
+                          style: TextStyle(color: AppColors.background),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          "Cancel",
+                          style: TextStyle(color: AppColors.primaryText),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check-in/out tap handler (with on‑demand location for checkout)
+  // ---------------------------------------------------------------------------
+  Future<void> _handleCheckInOutTap() async {
+    final active = _inActiveAttendance;
+    final isCheckedIn = active != null;
+
+    if (isCheckedIn) {
+      // Only now check geofence
+      final inside = await _timeAction('locationCheck', _checkLocation);
+      if (!mounted) return;
+      if (inside) {
+        _showCheckoutDialog();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "You're outside the office range. Go back and try again.",
+            ),
+            backgroundColor: AppColors.redLate,
+          ),
+        );
+      }
+    } else if (_canCheckIn) {
+      widget.onScanPressed();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "You've reached the daily limit ($_maxCheckins check-ins).",
+          ),
+          backgroundColor: AppColors.redLate,
+        ),
+      );
     }
   }
 
-  Future<bool> checkLocation() async {
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      return false;
-    }
-
-    Position position = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-    );
-
-    double distance = Geolocator.distanceBetween(
-      centerLat,
-      centerLng,
-      position.latitude,
-      position.longitude,
-    );
-    setState(() {
-      globalDistance = distance;
-    });
-
-    return distance <= allowedRadius;
-  }
-
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -241,226 +566,223 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
             const Icon(Icons.error_outline, color: Colors.red, size: 40),
             const SizedBox(height: 16),
             Text("Something went wrong", style: AppTextStyles.bodyBold),
-            TextButton(onPressed: _refreshAllData, child: const Text("Retry")),
+            TextButton(onPressed: _forceRefresh, child: const Text("Retry")),
           ],
         ),
       );
     }
 
-    // Logic for Summary Data
+    final attendances = _todayAttendances;
+    final active = _inActiveAttendance;
     final bool hasCheckedIn = _todayData?['status'] == "checked_in";
-    final bool isCheckedIn =
-        (_todayData?['data']?['isCheckedIn'] ?? false) == true;
-    final bool isWeekend = _todayData?['isWeekend'] ?? false;
+    final bool isCheckedIn = active != null;
 
-    final String checkInTimeDisplay = hasCheckedIn
-        ? _todayData!['data']['checkInTime'] != null
+    final String checkInTimeDisplay = hasCheckedIn && attendances.isNotEmpty
+        ? (attendances.first['checkInTime'] != null
               ? DateFormat.jm().format(
-                  DateTime.parse(_todayData!['data']['checkInTime']).toLocal(),
+                  DateTime.parse(attendances.first['checkInTime']).toLocal(),
                 )
-              : "--:--"
+              : "--:--")
         : "--:--";
 
-    final String checkOutTimeDisplay = hasCheckedIn
-        ? _todayData!['data']['checkOutTime'] != null
+    final String checkOutTimeDisplay = hasCheckedIn && attendances.isNotEmpty
+        ? (attendances.last['checkOutTime'] != null
               ? DateFormat.jm().format(
-                  DateTime.parse(_todayData!['data']['checkOutTime']).toLocal(),
+                  DateTime.parse(attendances.last['checkOutTime']).toLocal(),
                 )
-              : "--:--"
+              : "--:--")
         : "--:--";
 
-    final String statusText = isWeekend
-        ? "Weekend"
-        : (isCheckedIn ? "Checked In" : "Checked Out");
-    final Color statusColor = isWeekend
-        ? Colors.blue
-        : (isCheckedIn ? AppColors.primaryGreen : AppColors.redLate);
+    final String statusText = isCheckedIn ? "Checked In" : "Checked Out";
+    final Color statusColor = isCheckedIn
+        ? AppColors.primaryGreen
+        : AppColors.redLate;
 
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return RefreshIndicator(
+      onRefresh: _forceRefresh,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Good morning,',
-                    style: AppTextStyles.bodyRegular.copyWith(fontSize: 18),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        greeting,
+                        style: AppTextStyles.bodyRegular.copyWith(fontSize: 18),
+                      ),
+                      Text(fullName ?? "User", style: AppTextStyles.heading1),
+                    ],
                   ),
-                  Text(
-                    "${_userData?.firstName ?? "User"} ${_userData?.lastName ?? ""}",
-                    style: AppTextStyles.heading1,
+                  GestureDetector(
+                    onTap: widget.onProfilePressed,
+                    child: CircleAvatar(
+                      radius: 24,
+                      backgroundImage: imageUrl != null && imageUrl!.isNotEmpty
+                          ? NetworkImage(imageUrl!)
+                          : null,
+                      child: imageUrl == null || imageUrl!.isEmpty
+                          ? const Icon(
+                              Icons.person,
+                              size: 50,
+                              color: Colors.white,
+                            )
+                          : null,
+                    ),
                   ),
                 ],
               ),
-              GestureDetector(
-                onTap: widget.onProfilePressed,
-                child: CircleAvatar(
-                  radius: 24,
-                  backgroundImage: NetworkImage(
-                    _userData?.imageUrl ??
-                        "https://randomuser.me/api/portraits/men/20.jpg",
+              const SizedBox(height: 24),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppColors.cardWhite,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppColors.primaryText.withOpacity(0.2),
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      getFormattedDate(),
+                      style: AppTextStyles.bodyRegular.copyWith(fontSize: 15),
+                    ),
+                    Text(
+                      getFormattedTime(),
+                      style: AppTextStyles.bodyRegular.copyWith(fontSize: 15),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          // Status Card
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: AppColors.cardWhite,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.primaryText.withOpacity(0.2)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  getFormattedDate(),
-                  style: AppTextStyles.bodyRegular.copyWith(fontSize: 15),
-                ),
-                Text(
-                  getFormattedTime(),
-                  style: AppTextStyles.bodyRegular.copyWith(fontSize: 15),
-                ),
-              ],
-            ),
-          ),
-
-          // const SizedBox(height: 40),
-          const Spacer(),
-
-          // Central Scan Button
-          Center(
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                AnimatedBuilder(
-                  animation: _animation,
-                  builder: (context, child) {
-                    return CustomPaint(
-                      painter: RipplePainter(_animation.value, hasCheckedIn),
-                      size: const Size(210, 210),
-                    );
-                  },
-                ),
-                GestureDetector(
-                  onTap: () {
-                    // isInsideGeofence = false;
-                    isCheckedIn
-                        ? isInsideGeofence
-                              ? _showCheckoutDialog()
-                              : ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      "You're already outside the office range go back and try again",
-                                    ),
-                                    backgroundColor: AppColors.redLate,
-                                  ),
-                                )
-                        : widget.onScanPressed();
-                  },
-                  child: Container(
-                    width: 150,
-                    height: 150,
-                    decoration: BoxDecoration(
-                      color: isCheckedIn
-                          ? Colors.redAccent
-                          : AppColors.primaryText,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color:
-                              (isCheckedIn
-                                      ? Colors.redAccent
-                                      : AppColors.primaryText)
-                                  .withOpacity(0.3),
-                          blurRadius: 15,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          isCheckedIn ? Icons.logout : Icons.login,
-                          color: Colors.white,
-                          size: 40,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          isCheckedIn ? 'CHECK OUT' : 'CHECK IN',
-                          style: AppTextStyles.label.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
+              const SizedBox(height: 40),
+              Center(
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    AnimatedBuilder(
+                      animation: _animation,
+                      builder: (context, child) {
+                        return CustomPaint(
+                          painter: RipplePainter(
+                            _animation.value,
+                            hasCheckedIn,
                           ),
-                        ),
-                      ],
+                          size: const Size(210, 210),
+                        );
+                      },
                     ),
-                  ),
+                    GestureDetector(
+                      onTap: _handleCheckInOutTap,
+                      child: Container(
+                        width: 150,
+                        height: 150,
+                        decoration: BoxDecoration(
+                          color: isCheckedIn
+                              ? Colors.redAccent
+                              : _canCheckIn
+                              ? AppColors.primaryText
+                              : Colors.grey,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color:
+                                  (isCheckedIn
+                                          ? Colors.redAccent
+                                          : _canCheckIn
+                                          ? AppColors.primaryText
+                                          : Colors.grey)
+                                      .withOpacity(0.3),
+                              blurRadius: 15,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              isCheckedIn ? Icons.logout : Icons.login,
+                              color: Colors.white,
+                              size: 40,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              isCheckedIn ? 'CHECK OUT' : 'CHECK IN',
+                              style: AppTextStyles.label.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              '$_todayCheckinCount / $_maxCheckins',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-
-          const Spacer(),
-
-          // const SizedBox(height: 40),
-          Text(
-            "TODAY'S SUMMARY",
-            style: AppTextStyles.label.copyWith(letterSpacing: 1.2),
-          ),
-          const SizedBox(height: 16),
-
-          // Summary Grid
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 16,
-            crossAxisSpacing: 16,
-            childAspectRatio: 1.5,
-            children: [
-              _buildSummaryCard(
-                'Check In Time',
-                checkInTimeDisplay,
-                Icons.timer,
               ),
-              _buildSummaryCard(
-                'Working for',
-                _workingFor,
-                Icons.hourglass_bottom_outlined,
+              const SizedBox(height: 40),
+              Text(
+                "TODAY'S SUMMARY",
+                style: AppTextStyles.label.copyWith(letterSpacing: 1.2),
               ),
-              _buildSummaryCard(
-                'Check Out Time',
-                checkOutTimeDisplay,
-                Icons.timer,
-              ),
-              _buildSummaryCard(
-                'Status',
-                statusText,
-                Icons.switch_account_sharp,
-                textColor: statusColor,
+              const SizedBox(height: 16),
+              GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
+                childAspectRatio: 1.5,
+                children: [
+                  _buildSummaryCard(
+                    'Check In Time',
+                    checkInTimeDisplay,
+                    Icons.timer,
+                  ),
+                  _buildSummaryCard(
+                    'Working for',
+                    _workingFor,
+                    Icons.hourglass_bottom_outlined,
+                  ),
+                  _buildSummaryCard(
+                    'Check Out Time',
+                    checkOutTimeDisplay,
+                    Icons.timer,
+                  ),
+                  _buildSummaryCard(
+                    'Status',
+                    statusText,
+                    Icons.switch_account_sharp,
+                    textColor: statusColor,
+                  ),
+                ],
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -511,124 +833,6 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       ),
     );
   }
-
-  void _showCheckoutDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Icon
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.redAccent.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.logout,
-                    color: Colors.redAccent,
-                    size: 32,
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // Title
-                Text("Check Out", style: AppTextStyles.heading2),
-
-                const SizedBox(height: 8),
-
-                // Message
-                Text(
-                  "Are you ready to check out?",
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.bodyRegular,
-                ),
-
-                const SizedBox(height: 24),
-
-                // Buttons
-                Row(
-                  children: [
-                    // Confirm Checkout
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          Navigator.pop(context);
-
-                          try {
-                            final attendanceId = _todayData?['data']?['id'];
-
-                            if (attendanceId == null) {
-                              throw Exception("Attendance ID not found");
-                            }
-
-                            await AttendanceService.checkOut(attendanceId);
-
-                            // Refresh all data after checkout
-                            await _refreshAllData();
-                          } catch (e) {
-                            debugPrint("Checkout error: $e");
-
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text("Checkout failed")),
-                              );
-                            }
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.redAccent,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(
-                          "Check Out",
-                          style: TextStyle(color: AppColors.background),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(width: 12),
-
-                    // Cancel
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          "Cancel",
-                          style: TextStyle(color: AppColors.primaryText),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  //
 }
 
 class RipplePainter extends CustomPainter {

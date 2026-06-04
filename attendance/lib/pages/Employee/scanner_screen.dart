@@ -2,13 +2,12 @@ import 'package:attendance/db/attendance_service.dart';
 import 'package:attendance/db/settings.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
-// import 'package:http/http.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:wifi_scan/wifi_scan.dart';
 
 class ScannerScreen extends StatefulWidget {
-  final int id;
+  final String id;
   final Function(dynamic response)? onCheckInSuccess;
   const ScannerScreen({super.key, required this.id, this.onCheckInSuccess});
 
@@ -17,19 +16,15 @@ class ScannerScreen extends StatefulWidget {
 }
 
 class _ScannerScreenState extends State<ScannerScreen> {
-  // Traditional State Variables
   late WiFiAccessPoint wifi;
   bool isTorchOn = false;
   bool iswifiavailable = false;
-  bool? isInsideGeofence; // null = loading, true = inside, false = outside
+  bool? isInsideGeofence;
   double globalDistance = 0;
   bool isSubmitting = false;
 
-  // Office Geofence Constants
-  double centerLat = 8.986273300000001000000000000000;
-  double centerLng = 38.788376000000000000000000000000;
-  // double centerLat = 8.986202255702445;
-  // double centerLng = 38.78797835605372;
+  double centerLat = 8.986273300000001;
+  double centerLng = 38.788376000000000;
   double allowedRadius = 150;
   String wifiBssid = "00:4c:e5:f6:61:49";
 
@@ -41,15 +36,16 @@ class _ScannerScreenState extends State<ScannerScreen> {
   @override
   void initState() {
     super.initState();
-    // Initial geofence check
     _loadSettingsFromServer();
     _runLocationCheck();
     _runWifiCheck();
   }
 
+  // ---- Settings loading (with mounted guard) ----
   Future<void> _loadSettingsFromServer() async {
     try {
       final data = await SettingsService.getSettings();
+      if (!mounted) return; // Guard after await
       setState(() {
         allowedRadius = (data['radius'] as num).toDouble();
         centerLat =
@@ -61,17 +57,18 @@ class _ScannerScreenState extends State<ScannerScreen> {
         wifiBssid = data['bssid'] ?? "";
       });
     } catch (e) {
+      if (!mounted) return;
       _showSnackBar("Error loading settings: $e", Colors.red);
     }
   }
 
+  // ---- Location check (both methods guarded) ----
   Future<void> _runLocationCheck() async {
     bool result = await checkLocation();
-    if (mounted) {
-      setState(() {
-        isInsideGeofence = result;
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      isInsideGeofence = result;
+    });
   }
 
   Future<bool> checkLocation() async {
@@ -89,12 +86,15 @@ class _ScannerScreenState extends State<ScannerScreen> {
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
     );
 
+    if (!mounted) return false; // Guard after GPS fetch
+
     double distance = Geolocator.distanceBetween(
       centerLat,
       centerLng,
       position.latitude,
       position.longitude,
     );
+
     setState(() {
       globalDistance = distance;
     });
@@ -102,67 +102,51 @@ class _ScannerScreenState extends State<ScannerScreen> {
     return distance <= allowedRadius;
   }
 
+  // ---- WiFi check (both methods guarded) ----
   Future<void> _runWifiCheck() async {
     bool result = await checkOfficeWifi(wifiBssid);
-
-    if (mounted) {
-      setState(() {
-        iswifiavailable = result;
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      iswifiavailable = result;
+    });
   }
 
   Future<bool> checkOfficeWifi(String targetBssid) async {
     final canScan = await WiFiScan.instance.canStartScan();
-
-    if (canScan != CanStartScan.yes) {
-      return false;
-    }
+    if (canScan != CanStartScan.yes) return false;
 
     await WiFiScan.instance.startScan();
-
     final results = await WiFiScan.instance.getScannedResults();
 
     for (final network in results) {
       if (network.bssid.toLowerCase() == targetBssid.toLowerCase()) {
+        if (!mounted) return false; // Guard before setState
         setState(() {
           wifi = network;
         });
         return true;
       }
     }
-
     return false;
   }
 
+  // ---- Snackbar helper ----
   void _showSnackBar(String message, Color color) {
+    if (!mounted) return; // Safety guard
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message), backgroundColor: color));
   }
 
-  @override
-  void dispose() {
-    cameraController.dispose();
-    super.dispose();
-  }
-
-  // Called when a barcode is detected
+  // ---- Barcode handling unchanged (already uses mounted) ----
   Future<void> _handleBarcode(BarcodeCapture capture) async {
-    // Only process if location are verified
-    if (isInsideGeofence != true) {
-      debugPrint('Scan blocked: Location/WiFi not verified');
-      return;
-    }
-
-    // Prevent multiple simultaneous submissions
+    if (isInsideGeofence != true) return;
     if (isSubmitting) return;
 
     final barcodes = capture.barcodes;
     if (barcodes.isEmpty) return;
 
     final secret = barcodes.first.rawValue;
-
     if (secret == null || secret.isEmpty) return;
 
     isSubmitting = true;
@@ -175,43 +159,43 @@ class _ScannerScreenState extends State<ScannerScreen> {
         isBssid: iswifiavailable,
       );
 
-      if (mounted) {
-        final isLate = response['isLate'] ?? false;
-        final message = 'Checked in';
+      if (!mounted) return; // Additional guard
+      final isLate = response['isLate'] ?? false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Checked in'),
+          backgroundColor: isLate ? Colors.orange : AppColors.primaryGreen,
+          duration: const Duration(seconds: 5),
+        ),
+      );
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: isLate ? Colors.orange : AppColors.primaryGreen,
-            duration: const Duration(seconds: 5),
-          ),
-        );
-
-        // Navigate back after successful check-in
-        Future.delayed(const Duration(milliseconds: 1500), () {
-          if (widget.onCheckInSuccess != null) {
-            widget.onCheckInSuccess!(response);
-          }
-        });
-        // Navigator.pop(context);
-      }
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (widget.onCheckInSuccess != null) {
+          widget.onCheckInSuccess!(response);
+        }
+      });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Check-in failed: ${e.toString()}'),
-            backgroundColor: AppColors.redLate,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-        // Resume scanning so user can retry
-        cameraController.start();
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Check-in failed: ${e.toString()}'),
+          backgroundColor: AppColors.redLate,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      cameraController.start();
     } finally {
-      isSubmitting = false;
+      if (mounted) isSubmitting = false; // Reset only if still alive
     }
   }
 
+  @override
+  void dispose() {
+    cameraController.dispose();
+    super.dispose();
+  }
+
+  // ---------- UI (unchanged, kept for completeness) ----------
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -221,8 +205,6 @@ class _ScannerScreenState extends State<ScannerScreen> {
         children: [
           _buildHeader(),
           const SizedBox(height: 32),
-
-          // Scanner Box
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -239,29 +221,26 @@ class _ScannerScreenState extends State<ScannerScreen> {
                     ),
                   ),
                   _buildCorners(),
-                  // Overlay for "Outside Area" to dim the scanner
                   if (isInsideGeofence == false || isInsideGeofence == null)
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.6),
                         borderRadius: BorderRadius.circular(24),
                       ),
-                      child: Center(
+                      child: const Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              isInsideGeofence == false
-                                  ? Icons.location_off
-                                  : Icons.wifi_off,
+                              Icons.location_off,
                               color: Colors.white,
                               size: 48,
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: 16),
                             Text(
                               "SCANNER DISABLED\nMove inside the office",
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -274,16 +253,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
               ),
             ),
           ),
-
           const SizedBox(height: 24),
-
-          // Location Verification Badge
           _buildLocationBadge(),
           const SizedBox(height: 24),
-
           _buildWifiBadge(),
           const SizedBox(height: 24),
-
           Center(
             child: Text(
               "Approximately ${globalDistance.toStringAsFixed(0)}m away from office",
@@ -433,7 +407,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                 Text(
                   verified
                       ? 'SSID: ${wifi.ssid}'
-                      : 'Connect To The Office Network',
+                      : 'The Office Network is not Found Nearby',
                   style: AppTextStyles.label,
                 ),
               ],

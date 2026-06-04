@@ -6,9 +6,13 @@ class AuthProvider {
   static const String _keyIsApproved = 'isApproved';
 
   // Store login data
-  static Future<void> login(int userId, bool isAdmin, bool isApproved) async {
+  static Future<void> login(
+    String userId,
+    bool isAdmin,
+    bool isApproved,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_keyUserId, userId);
+    await prefs.setString(_keyUserId, userId);
     await prefs.setBool(_keyIsAdmin, isAdmin);
     await prefs.setBool(_keyIsApproved, isApproved);
   }
@@ -23,7 +27,7 @@ class AuthProvider {
   static Future<Map<String, dynamic>> getUserData() async {
     final prefs = await SharedPreferences.getInstance();
     return {
-      'userId': prefs.getInt(_keyUserId),
+      'userId': prefs.getString(_keyUserId),
       'isAdmin': prefs.getBool(_keyIsAdmin) ?? false,
       'isApproved': prefs.getBool(_keyIsApproved) ?? false,
     };

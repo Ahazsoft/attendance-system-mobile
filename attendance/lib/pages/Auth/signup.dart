@@ -14,22 +14,22 @@ class _SignUpPageState extends State<SignUpPage> {
   final _formKey = GlobalKey<FormState>();
 
   // Controllers to capture user input
-  final TextEditingController _firstNameController = TextEditingController();
-  final TextEditingController _lastNameController = TextEditingController();
+  final TextEditingController _fullNameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _positionController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
       TextEditingController();
 
+  // Gender selection
+  String? _gender = 'Male';
   bool _isObscured = true;
   bool _isLoading = false;
 
   @override
   void dispose() {
     // Dispose controllers to prevent memory leaks
-    _firstNameController.dispose();
-    _lastNameController.dispose();
+    _fullNameController.dispose();
     _emailController.dispose();
     _positionController.dispose();
     _passwordController.dispose();
@@ -50,11 +50,11 @@ class _SignUpPageState extends State<SignUpPage> {
         if (position.isEmpty) position = null;
 
         await AuthService.signup(
-          _firstNameController.text.trim(),
-          _lastNameController.text.trim(),
+          _fullNameController.text.trim(),
           _emailController.text.trim(),
           _passwordController.text,
           position,
+          _gender == 'Male',
         );
 
         if (!mounted) return;
@@ -158,34 +158,17 @@ class _SignUpPageState extends State<SignUpPage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // First Name Field
+                        // Full Name Field
                         TextFormField(
-                          controller: _firstNameController,
+                          controller: _fullNameController,
                           decoration: _buildInputDecoration(
-                            'First Name',
-                            'Enter your first name',
+                            'Full Name',
+                            'Enter your full name',
                             Icons.person,
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
                               return 'Please enter your first name';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16.0),
-
-                        // Last Name Field
-                        TextFormField(
-                          controller: _lastNameController,
-                          decoration: _buildInputDecoration(
-                            'Last Name',
-                            'Enter your last name',
-                            Icons.person_outline,
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Please enter your last name';
                             }
                             return null;
                           },
@@ -225,6 +208,55 @@ class _SignUpPageState extends State<SignUpPage> {
                           ),
                         ),
                         const SizedBox(height: 16.0),
+
+                        // Gender Field (Radio Buttons)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: const EdgeInsets.only(
+                              left: 6.0,
+                              bottom: 6.0,
+                            ),
+                            child: Text(
+                              'Gender',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: AppColors.primaryText,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: RadioListTile<String>(
+                                title: const Text('Male'),
+                                value: 'Male',
+                                groupValue: _gender,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _gender = value;
+                                  });
+                                },
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                            Expanded(
+                              child: RadioListTile<String>(
+                                title: const Text('Female'),
+                                value: 'Female',
+                                groupValue: _gender,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _gender = value;
+                                  });
+                                },
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                          ],
+                        ),
 
                         // Password Field
                         TextFormField(

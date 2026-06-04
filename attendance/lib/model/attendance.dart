@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:nativewrappers/_internal/vm/lib/ffi_native_type_patch.dart';
 
 class Attendance {
   final int? id;
@@ -8,6 +9,7 @@ class Attendance {
   final double? workingHours;
   final bool isBssidAvailable;
   final bool isCheckedIn;
+  final bool isAbsent;
 
   Attendance({
     this.id,
@@ -17,6 +19,7 @@ class Attendance {
     this.workingHours,
     this.isBssidAvailable = false,
     this.isCheckedIn = true,
+    this.isAbsent = false,
   });
 
   // Copy with method for updates
@@ -28,6 +31,7 @@ class Attendance {
     double? workingHours,
     bool? isBssidAvailable,
     bool? isCheckedIn,
+    bool? isAbsent,
   }) {
     return Attendance(
       id: id ?? this.id,
@@ -37,6 +41,7 @@ class Attendance {
       workingHours: workingHours ?? this.workingHours,
       isBssidAvailable: isBssidAvailable ?? this.isBssidAvailable,
       isCheckedIn: isCheckedIn ?? this.isCheckedIn,
+      isAbsent: isAbsent ?? this.isAbsent,
     );
   }
 

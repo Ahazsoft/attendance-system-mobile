@@ -7,7 +7,7 @@ import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
 
 class EmployeeHomeScreen extends StatefulWidget {
-  final int id;
+  final String id;
   const EmployeeHomeScreen({super.key, required this.id});
 
   @override

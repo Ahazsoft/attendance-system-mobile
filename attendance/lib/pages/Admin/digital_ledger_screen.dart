@@ -159,7 +159,7 @@ class _DigitalLedgerScreenState extends State<DigitalLedgerScreen> {
       }
 
       records.add({
-        'name': '${user.firstName} ${user.lastName}',
+        'name': user.fullName,
         'date': DateFormat('MMM d').format(checkInLocal),
         'inTime': DateFormat('h:mm a').format(checkInLocal),
         'outTime': isCheckedOut

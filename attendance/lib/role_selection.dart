@@ -63,7 +63,7 @@ class _SplashPageState extends State<SplashPage>
       final data = await AuthProvider.getUserData();
       final isAdmin = data['isAdmin'] as bool;
       final isApproved = data['isApproved'] as bool;
-      final userId = data['userId'] as int;
+      final userId = data['userId'] as String;
 
       Widget destination;
       if (isAdmin) {

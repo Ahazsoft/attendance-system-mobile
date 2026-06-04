@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use
 
+import 'dart:convert';
 import 'package:attendance/db/auth_provider.dart';
 import 'package:attendance/db/auth_service.dart';
 import 'package:attendance/db/employee_service.dart';
@@ -9,10 +10,11 @@ import 'package:attendance/pages/Auth/login.dart';
 import 'package:attendance/pages/skeleton/profile_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
 
 class ProfileViewPage extends StatefulWidget {
-  final int id;
+  final String id;
   const ProfileViewPage({super.key, required this.id});
 
   @override
@@ -21,19 +23,93 @@ class ProfileViewPage extends StatefulWidget {
 
 class _ProfileViewPageState extends State<ProfileViewPage> {
   bool _notificationsEnabled = false;
-  // Data State Variables
   User? _userData;
   bool _isLoading = true;
   String? _errorMessage;
 
+  // Cache helpers
+  String get _cacheKey => 'profile_cache_${widget.id}';
+
+  String _todayEatDateString() {
+    final now = DateTime.now().toUtc().add(const Duration(hours: 3));
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<Map<String, dynamic>?> _readCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getString(_cacheKey);
+      if (json != null) return jsonDecode(json) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('Profile cache read error: $e');
+    }
+    return null;
+  }
+
+  Future<void> _writeCache(User user) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final payload = jsonEncode({
+        'date': _todayEatDateString(),
+        'user': user.toJson(),
+      });
+      await prefs.setString(_cacheKey, payload);
+    } catch (e) {
+      debugPrint('Profile cache write error: $e');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    _fetchEmployeeData();
+    _loadData(); // cache‑first logic
+  }
+
+  // Cache‑first: use today's cache if available, else fetch from server
+  Future<void> _loadData() async {
+    final cached = await _readCache();
+    if (cached != null && cached['date'] == _todayEatDateString()) {
+      try {
+        setState(() {
+          _userData = User.fromJson(cached['user'] as Map<String, dynamic>);
+          _isLoading = false;
+          _errorMessage = null;
+        });
+        return;
+      } catch (e) {
+        debugPrint('Profile cache corrupt: $e');
+        // Corrupt cache – remove it and fall through to server fetch
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_cacheKey);
+      }
+    }
+    await _fetchFromServer();
+  }
+
+  // Fetch fresh data from server and cache it
+  Future<void> _fetchFromServer() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+      final user = await EmployeeService.fetchUserById(widget.id);
+      if (!mounted) return;
+      setState(() {
+        _userData = user;
+        _isLoading = false;
+      });
+      _writeCache(user);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = e.toString();
+        _isLoading = false;
+      });
+    }
   }
 
   void _navigateToEdit() async {
-    // Wait for the updated user object from the Edit page
     final updatedUser = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -45,28 +121,8 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
       setState(() {
         _userData = updatedUser;
       });
-    }
-  }
-
-  Future<void> _fetchEmployeeData() async {
-    try {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = null;
-      });
-
-      // Using widget.id passed from the parent screen
-      final user = await EmployeeService.fetchUserById(widget.id);
-
-      setState(() {
-        _userData = user;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = e.toString();
-        _isLoading = false;
-      });
+      // Update cache with new user data
+      _writeCache(updatedUser);
     }
   }
 
@@ -76,7 +132,7 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
       return Shimmer.fromColors(
         baseColor: Colors.grey.shade300,
         highlightColor: Colors.grey.shade100,
-        child: ProfileSkeletonContent(), // ← extract non‑Scaffold part
+        child: ProfileSkeletonContent(),
       );
     }
 
@@ -89,22 +145,21 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
             const SizedBox(height: 16),
             Text("Something went wrong", style: AppTextStyles.bodyBold),
             TextButton(
-              onPressed: _fetchEmployeeData,
+              onPressed: _loadData, // retry using cache‑first again
               child: const Text("Retry"),
             ),
           ],
         ),
       );
     }
+
     return Scaffold(
-      backgroundColor: AppColors.background, // Creamy background
+      backgroundColor: AppColors.background,
       body: SingleChildScrollView(
         child: Column(
           children: [
             const SizedBox(height: 40),
             _buildProfile(),
-            // const SizedBox(height: 30),
-            // _buildStatsRow(),
             const SizedBox(height: 30),
             _buildInfoCard(),
             _buildSettingsCard(),
@@ -120,14 +175,17 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
       children: [
         CircleAvatar(
           radius: 55,
-          backgroundImage: NetworkImage(
-            _userData?.imageUrl ??
-                'https://randomuser.me/api/portraits/men/20.jpg',
-          ),
+          backgroundImage:
+              _userData?.imageUrl != null && _userData!.imageUrl!.isNotEmpty
+              ? NetworkImage(_userData!.imageUrl!)
+              : null,
+          child: _userData?.imageUrl == null || _userData!.imageUrl!.isEmpty
+              ? const Icon(Icons.person, size: 50, color: Colors.white)
+              : null,
         ),
         const SizedBox(height: 15),
         Text(
-          "${_userData!.firstName} ${_userData!.lastName}",
+          _userData!.fullName,
           style: const TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.bold,
@@ -144,7 +202,7 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primaryText,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8), // ← Less rounded (was 30)
+              borderRadius: BorderRadius.circular(8),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 10),
           ),
@@ -156,61 +214,6 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
       ],
     );
   }
-
-  // Widget _buildStatsRow() {
-  //   return Container(
-  //     padding: const EdgeInsets.all(16),
-  //     margin: const EdgeInsets.symmetric(horizontal: 20),
-  //     decoration: BoxDecoration(
-  //       color: AppColors.cardWhite,
-  //       borderRadius: BorderRadius.circular(16),
-  //       border: Border.all(color: AppColors.primaryText.withOpacity(0.2)),
-  //       boxShadow: [
-  //         BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10),
-  //       ],
-  //     ),
-  //     child: Row(
-  //       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-  //       children: [
-  //         Column(
-  //           children: [
-  //             Text(
-  //               "Streak",
-  //               style: const TextStyle(fontSize: 12, color: Colors.brown),
-  //             ),
-  //             Text(
-  //               "${_currentUser.streak} 🔥",
-  //               style: const TextStyle(
-  //                 fontWeight: FontWeight.bold,
-  //                 fontSize: 16,
-  //               ),
-  //             ),
-  //           ],
-  //         ),
-  //         Container(
-  //           height: 40,
-  //           width: 1,
-  //           color: AppColors.primaryText.withOpacity(0.2),
-  //         ),
-  //         Column(
-  //           children: [
-  //             Text(
-  //               "Status",
-  //               style: const TextStyle(fontSize: 12, color: Colors.brown),
-  //             ),
-  //             Text(
-  //               _currentUser.isApproved ? "Verified" : "Pending",
-  //               style: const TextStyle(
-  //                 fontWeight: FontWeight.bold,
-  //                 fontSize: 16,
-  //               ),
-  //             ),
-  //           ],
-  //         ),
-  //       ],
-  //     ),
-  //   );
-  // }
 
   Widget _buildInfoCard() {
     return Container(
@@ -232,14 +235,6 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
             Icons.phone_outlined,
             "Phone",
             _userData?.telephone ?? "Not set",
-          ),
-          const Divider(height: 30),
-          _infoTile(
-            Icons.attach_money_outlined,
-            "Salary",
-            _userData!.salary != null
-                ? "\$${_userData!.salary!.toStringAsFixed(2)}"
-                : "Not set",
           ),
         ],
       ),
@@ -290,14 +285,12 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
             ),
             activeThumbColor: AppColors.primaryText,
             inactiveThumbColor: AppColors.primaryText,
-
-            // inactiveTrackColor: AppColors.primaryText.withOpacity(0.2),
             value: _notificationsEnabled,
             onChanged: (bool value) =>
                 setState(() => _notificationsEnabled = value),
           ),
           const Padding(
-            padding: EdgeInsetsGeometry.symmetric(horizontal: 20),
+            padding: EdgeInsets.symmetric(horizontal: 20),
             child: Divider(height: 20),
           ),
           ListTile(
@@ -309,9 +302,7 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
             onTap: () async {
               try {
                 await AuthProvider.logout();
-
                 await AuthService.logout();
-
                 if (!mounted) return;
                 Navigator.pushAndRemoveUntil(
                   context,

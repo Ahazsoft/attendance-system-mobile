@@ -4,14 +4,16 @@ import 'package:http/http.dart' as http;
 
 class SettingsService {
   // static const String baseUrl = 'http://192.168.1.7:3001/api/v1/settings';
+  // static const String baseUrl =
+  //     'http://10.118.185.202:3000/api/public/settings';
   static const String baseUrl =
-      'https://attendance-backend.ahaz.io/api/v1/settings';
+      'https://ahaz-dashboard.vercel.app/api/public/settings';
 
   // Fetch settings from DB
   static Future<Map<String, dynamic>> getSettings() async {
     final token = await AuthService.getToken();
     final response = await http.get(
-      Uri.parse('$baseUrl/read'),
+      Uri.parse(baseUrl),
       headers: {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
@@ -36,7 +38,7 @@ class SettingsService {
   }) async {
     final token = await AuthService.getToken();
     final response = await http.put(
-      Uri.parse('$baseUrl/update'),
+      Uri.parse(baseUrl),
       headers: {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
@@ -61,7 +63,7 @@ class SettingsService {
     final token = await AuthService.getToken();
 
     final response = await http.get(
-      Uri.parse('$baseUrl/getServerTime'),
+      Uri.parse('$baseUrl/time'),
       headers: {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',

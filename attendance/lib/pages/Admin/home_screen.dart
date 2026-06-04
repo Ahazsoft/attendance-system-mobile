@@ -21,7 +21,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     const AdminDashboardScreen(),
     const DigitalLedgerScreen(),
     const TeamGroveScreen(), // Placeholder
-    const ProfileViewPage(id: 2),
+    const ProfileViewPage(id: 'AHZ-0001'),
     const OfficeSettingsScreen(),
   ];
 
