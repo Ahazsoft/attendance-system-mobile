@@ -16,6 +16,8 @@ class EmployeeHomeScreen extends StatefulWidget {
 
 class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   int currentIndex = 0;
+  final GlobalKey<EmployeeDashboardScreenState> dashboardKey =
+      GlobalKey<EmployeeDashboardScreenState>();
 
   @override
   void initState() {
@@ -26,6 +28,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   Widget build(BuildContext context) {
     final List<Widget> pages = [
       EmployeeDashboardScreen(
+        key: dashboardKey,
         onScanPressed: () {
           setState(() {
             currentIndex = 1;
@@ -43,6 +46,9 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
         onCheckInSuccess: (response) {
           setState(() {
             currentIndex = 0; // Switch back to Dashboard
+          });
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            dashboardKey.currentState?.forceRefresh();
           });
         },
       ),

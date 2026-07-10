@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:attendance/db/settings.dart';
+import 'package:attendance/service/settings.dart';
 import 'package:attendance/pages/skeleton/settings_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
@@ -75,10 +75,6 @@ class _OfficeSettingsScreenState extends State<OfficeSettingsScreen> {
         bssidController.text = data['bssid'] ?? "";
         secretController.text = data['SecretCode'] ?? "";
 
-        print(
-          "Fetched settings: latitude:, ${latitudeController.text},"
-          " longitude: ${longitudeController.text}",
-        );
         // Parse "HH:mm:ss" from backend to TimeOfDay
         String timeStr = data['lateThreshold']; // e.g. "09:30:00"
         final parts = timeStr.split(':');
@@ -148,11 +144,10 @@ class _OfficeSettingsScreenState extends State<OfficeSettingsScreen> {
     try {
       // 1. Wait for the position
       Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-
-      print(
-        "latitude: ${position.latitude} && longitude: ${position.longitude}",
+        locationSettings: LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 200,
+        ),
       );
 
       // 2. Update the controllers inside setState so the UI refreshes

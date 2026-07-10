@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:attendance/model/user.dart';
-import 'package:attendance/db/employee_service.dart'; // Import the service
+import 'package:attendance/service/employee_service.dart'; // Import the service
 import 'package:attendance/pages/skeleton/edit_profile_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';

@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'package:attendance/db/attendance_service.dart';
-import 'package:attendance/db/employee_service.dart';
+import 'package:attendance/service/attendance_service.dart';
+import 'package:attendance/service/employee_service.dart';
 import 'package:attendance/model/user.dart';
 import 'package:attendance/pages/skeleton/team_skeleton.dart';
 import 'package:flutter/material.dart';

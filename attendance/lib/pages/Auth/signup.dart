@@ -1,7 +1,7 @@
 import 'package:attendance/Pages/auth/login.dart';
 import 'package:flutter/material.dart';
 import 'package:attendance/theme/appTheme.dart';
-import 'package:attendance/db/auth_service.dart';
+import 'package:attendance/service/auth_service.dart';
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});

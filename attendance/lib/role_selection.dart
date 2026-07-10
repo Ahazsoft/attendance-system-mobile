@@ -4,7 +4,7 @@ import 'package:attendance/pages/Employee/home_screen.dart';
 import 'package:attendance/pages/Employee/pending_screen.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
-import 'package:attendance/db/auth_provider.dart';
+import 'package:attendance/service/auth_provider.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});

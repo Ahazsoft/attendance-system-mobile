@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:attendance/db/attendance_service.dart';
+import 'package:attendance/service/attendance_service.dart';
 import 'package:attendance/pages/skeleton/history_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';

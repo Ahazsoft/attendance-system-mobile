@@ -1,5 +1,5 @@
-import 'package:attendance/db/attendance_service.dart';
-import 'package:attendance/db/settings.dart';
+import 'package:attendance/service/attendance_service.dart';
+import 'package:attendance/service/settings.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -45,6 +45,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
   Future<void> _loadSettingsFromServer() async {
     try {
       final data = await SettingsService.getSettings();
+      print("Scanner Page data  = $data");
       if (!mounted) return; // Guard after await
       setState(() {
         allowedRadius = (data['radius'] as num).toDouble();

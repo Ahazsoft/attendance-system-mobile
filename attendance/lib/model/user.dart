@@ -8,7 +8,6 @@ class User {
   final String? imageUrl;
   final double? salary;
   final String? telephone;
-  final int streak;
 
   User({
     required this.id,
@@ -20,7 +19,6 @@ class User {
     this.imageUrl,
     this.salary,
     this.telephone,
-    required this.streak,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -34,7 +32,6 @@ class User {
       imageUrl: json['imageUrl'],
       salary: json['salary']?.toDouble(),
       telephone: json['telephone'],
-      streak: json['streak'] ?? 0,
     );
   }
 
@@ -49,7 +46,6 @@ class User {
       'imageUrl': imageUrl,
       'salary': salary,
       'telephone': telephone,
-      'streak': 0,
     };
   }
 
@@ -63,7 +59,6 @@ class User {
     String? imageUrl,
     double? salary,
     String? telephone,
-    int? streak,
   }) {
     return User(
       id: id ?? this.id,
@@ -75,7 +70,6 @@ class User {
       imageUrl: imageUrl ?? this.imageUrl,
       salary: salary ?? this.salary,
       telephone: telephone ?? this.telephone,
-      streak: streak ?? this.streak,
     );
   }
 }
@@ -91,5 +85,4 @@ const data = {
   "imageUrl": null,
   "salary": null,
   "telephone": null,
-  "streak": 0,
 };

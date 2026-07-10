@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'package:attendance/db/attendance_service.dart';
-import 'package:attendance/db/employee_service.dart';
-import 'package:attendance/db/settings.dart';
+import 'package:attendance/service/attendance_service.dart';
+import 'package:attendance/service/employee_service.dart';
+import 'package:attendance/service/settings.dart';
 import 'package:attendance/model/user.dart';
 import 'package:attendance/pages/skeleton/admin_dashboard_skeleton.dart';
 import 'package:flutter/material.dart';
@@ -274,6 +274,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       return Shimmer.fromColors(
         baseColor: Colors.grey.shade300,
         highlightColor: Colors.grey.shade100,
+        // child: const Text("Loading"),
         child: const AdminDashboardSkeleton(),
       );
     }

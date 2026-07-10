@@ -1,9 +1,9 @@
 // ignore_for_file: deprecated_member_use
 
 import 'dart:convert';
-import 'package:attendance/db/auth_provider.dart';
-import 'package:attendance/db/auth_service.dart';
-import 'package:attendance/db/employee_service.dart';
+import 'package:attendance/service/auth_provider.dart';
+import 'package:attendance/service/auth_service.dart';
+import 'package:attendance/service/employee_service.dart';
 import 'package:attendance/model/user.dart';
 import 'package:attendance/pages/shared/edit_profile_screen.dart';
 import 'package:attendance/pages/Auth/login.dart';

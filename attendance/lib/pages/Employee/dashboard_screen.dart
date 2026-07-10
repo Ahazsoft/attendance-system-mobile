@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:attendance/db/attendance_service.dart';
-import 'package:attendance/db/employee_service.dart';
-import 'package:attendance/db/settings.dart';
+import 'package:attendance/service/attendance_service.dart';
+import 'package:attendance/service/employee_service.dart';
+import 'package:attendance/service/settings.dart';
 import 'package:attendance/model/user.dart';
 import 'package:attendance/pages/skeleton/dashboard_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
@@ -25,10 +25,10 @@ class EmployeeDashboardScreen extends StatefulWidget {
 
   @override
   State<EmployeeDashboardScreen> createState() =>
-      _EmployeeDashboardScreenState();
+      EmployeeDashboardScreenState();
 }
 
-class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
+class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _animation;
