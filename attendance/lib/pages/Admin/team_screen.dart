@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'package:attendance/db/attendance_service.dart';
-import 'package:attendance/db/employee_service.dart';
+import 'package:attendance/service/attendance_service.dart';
+import 'package:attendance/service/employee_service.dart';
 import 'package:attendance/model/user.dart';
 import 'package:attendance/pages/skeleton/team_skeleton.dart';
 import 'package:flutter/material.dart';
@@ -45,7 +45,7 @@ class _TeamGroveScreenState extends State<TeamGroveScreen> {
 
       for (final user in validUsers) {
         final attendanceRecords = await AttendanceService.getAllAttendance(
-          user.id!,
+          user.id,
         );
 
         // Index records by local date string "yyyy-MM-dd"
@@ -107,7 +107,7 @@ class _TeamGroveScreenState extends State<TeamGroveScreen> {
 
         processed.add({
           'id': user.id,
-          'name': '${user.firstName} ${user.lastName}',
+          'name': user.fullName,
           'role': user.position ?? 'Team Member',
           'streak': '0d', // placeholder since streak is not recorded
           'avg': '${avgHours.toStringAsFixed(1)}h',
@@ -304,17 +304,6 @@ class _TeamGroveScreenState extends State<TeamGroveScreen> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    // const Icon(
-                    //   Icons.energy_savings_leaf_outlined,
-                    //   color: AppColors.primaryGreen,
-                    //   size: 14,
-                    // ),
-                    // const SizedBox(width: 4),
-                    // Text(
-                    //   '${member['streak']} streak',
-                    //   style: AppTextStyles.label.copyWith(fontSize: 11),
-                    // ),
-                    // const SizedBox(width: 12),
                     const Icon(Icons.schedule, color: Colors.orange, size: 14),
                     const SizedBox(width: 4),
                     Text(

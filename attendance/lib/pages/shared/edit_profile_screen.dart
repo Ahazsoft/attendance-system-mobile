@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:attendance/model/user.dart';
-import 'package:attendance/db/employee_service.dart'; // Import the service
+import 'package:attendance/service/employee_service.dart'; // Import the service
 import 'package:attendance/pages/skeleton/edit_profile_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
@@ -17,7 +17,6 @@ class EditProfilePage extends StatefulWidget {
 
 class _EditProfilePageState extends State<EditProfilePage> {
   late TextEditingController _firstController;
-  late TextEditingController _lastController;
   late TextEditingController _phoneController;
   File? _imageFile;
   bool _isLoading = false; // Add loading state
@@ -25,15 +24,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
   @override
   void initState() {
     super.initState();
-    _firstController = TextEditingController(text: widget.user.firstName);
-    _lastController = TextEditingController(text: widget.user.lastName);
+    _firstController = TextEditingController(text: widget.user.fullName);
     _phoneController = TextEditingController(text: widget.user.telephone);
   }
 
   @override
   void dispose() {
     _firstController.dispose();
-    _lastController.dispose();
     _phoneController.dispose();
     super.dispose();
   }
@@ -47,7 +44,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   Future<void> _handleSave() async {
-    if (_firstController.text.isEmpty || _lastController.text.isEmpty) {
+    if (_firstController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('First and Last name cannot be empty')),
       );
@@ -59,14 +56,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
     try {
       final updatedUser = await EmployeeService.updateUserProfile(
         id: widget.user.id, // Assuming user.id exists
-        firstName: _firstController.text.trim(),
-        lastName: _lastController.text.trim(),
+        fullName: _firstController.text.trim(),
         telephone: _phoneController.text.trim(),
         imageFile: _imageFile,
       );
 
       if (mounted) {
-        // Pop the screen and pass back the updated user data
         Navigator.pop(context, updatedUser);
       }
     } catch (e) {
@@ -153,7 +148,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
             ),
             const SizedBox(height: 40),
             _inputField("First Name", _firstController),
-            _inputField("Last Name", _lastController),
             _inputField("Phone", _phoneController),
 
             const SizedBox(height: 40),

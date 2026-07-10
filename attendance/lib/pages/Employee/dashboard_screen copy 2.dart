@@ -1,0 +1,728 @@
+import 'dart:async';
+import 'package:attendance/service/attendance_service.dart';
+import 'package:attendance/service/employee_service.dart';
+import 'package:attendance/service/settings.dart';
+import 'package:attendance/model/user.dart';
+import 'package:attendance/pages/skeleton/dashboard_skeleton.dart';
+import 'package:attendance/theme/appTheme.dart';
+import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import "package:intl/intl.dart";
+import 'package:shimmer/shimmer.dart';
+
+class EmployeeDashboardScreen extends StatefulWidget {
+  final VoidCallback onScanPressed;
+  final VoidCallback onProfilePressed;
+  final String id;
+  const EmployeeDashboardScreen({
+    super.key,
+    required this.onScanPressed,
+    required this.onProfilePressed,
+    required this.id,
+  });
+
+  @override
+  State<EmployeeDashboardScreen> createState() =>
+      _EmployeeDashboardScreenState();
+}
+
+class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+  Map<String, dynamic>? _todayData;
+  Timer? _statsTimer;
+  String _workingFor = "0h 0m";
+  DateTime? _serverTime;
+  DateTime? _serverTimeEat;
+  Timer? _serverTimeTimer;
+  // Data State Variables
+  User? _userData;
+  bool _isLoading = true;
+  bool isInsideGeofence =
+      false; // null = loading, true = inside, false = outside
+  String? _errorMessage;
+
+  double centerLat = 8.986273300000001000000000000000;
+  double centerLng = 38.788376000000000000000000000000;
+  double globalDistance = 0;
+  double allowedRadius = 150;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _statsTimer?.cancel();
+    _serverTimeTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _setupAnimation();
+    _refreshAllData();
+
+    _statsTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      if (mounted) _calculateWorkingTime();
+    });
+    // Refresh server time every minute to keep display accurate
+    _serverTimeTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      _fetchServerTime();
+    });
+  }
+
+  Future<void> _refreshAllData() async {
+    final initStart = DateTime.now().millisecondsSinceEpoch;
+    try {
+      setState(() => _isLoading = true);
+
+      // Fetch all required data points in parallel
+      final results = await Future.wait([
+        EmployeeService.fetchUserById(widget.id),
+        AttendanceService.getTodayStatus(widget.id),
+        // AttendanceService.getAllAttendance(widget.id),
+        _fetchServerTime(),
+        _loadSettingsFromServer(),
+        _runLocationCheck(),
+      ]);
+
+      setState(() {
+        _userData = results[0] as User;
+        _todayData = results[1] as Map<String, dynamic>;
+        _isLoading = false;
+        _errorMessage = null;
+      });
+
+      _calculateWorkingTime();
+      print(
+        'calculated Data total: ${DateTime.now().millisecondsSinceEpoch - initStart}ms',
+      );
+    } catch (e) {
+      print("Dashboard Page :Error $e");
+      setState(() {
+        _errorMessage = e.toString();
+        _isLoading = false;
+      });
+      print(
+        'errorfrom server Data total: ${DateTime.now().millisecondsSinceEpoch - initStart}ms',
+      );
+    }
+  }
+
+  // Future<void> _refreshAllData() async {
+  //   final totalStart = DateTime.now().millisecondsSinceEpoch; // 🔴 Start total
+
+  //   try {
+  //     setState(() => _isLoading = true);
+
+  //     // Time the parallel fetch
+  //     final fetchStart = DateTime.now().millisecondsSinceEpoch;
+  //     final results = await Future.wait([
+  //       EmployeeService.fetchUserById(widget.id),
+  //       AttendanceService.getTodayStatus(widget.id),
+  //       AttendanceService.getAllAttendance(widget.id),
+  //       _fetchServerTime(),
+  //       _loadSettingsFromServer(),
+  //       _runLocationCheck(),
+  //     ]);
+  //     final fetchMs = DateTime.now().millisecondsSinceEpoch - fetchStart;
+  //     print('⏱️  Future.wait (6 calls): ${fetchMs}ms');
+
+  //     // Time setState
+  //     final setStateStart = DateTime.now().millisecondsSinceEpoch;
+  //     setState(() {
+  //       _userData = results[0] as User;
+  //       _todayData = results[1] as Map<String, dynamic>;
+  //       _isLoading = false;
+  //       _errorMessage = null;
+  //     });
+  //     final setStateMs = DateTime.now().millisecondsSinceEpoch - setStateStart;
+  //     print('⏱️  setState: ${setStateMs}ms');
+
+  //     // Time _calculateWorkingTime
+  //     final calcStart = DateTime.now().millisecondsSinceEpoch;
+  //     _calculateWorkingTime();
+  //     final calcMs = DateTime.now().millisecondsSinceEpoch - calcStart;
+  //     print('⏱️  _calculateWorkingTime(): ${calcMs}ms');
+
+  //     // Total
+  //     final totalMs = DateTime.now().millisecondsSinceEpoch - totalStart;
+  //     print(
+  //       '✅ _refreshAllData total: ${totalMs}ms (${(totalMs / 1000).toStringAsFixed(2)}s)',
+  //     );
+  //   } catch (e) {
+  //     final errorMs = DateTime.now().millisecondsSinceEpoch - totalStart;
+  //     print('❌ _refreshAllData failed after ${errorMs}ms: $e');
+  //     setState(() {
+  //       _errorMessage = e.toString();
+  //       _isLoading = false;
+  //     });
+  //   }
+  // }
+
+  Future<void> _fetchServerTime() async {
+    try {
+      final serverTimeUtc = await SettingsService.getServerTime();
+
+      final serverTimeEat = serverTimeUtc.add(const Duration(hours: 3));
+
+      if (mounted) {
+        setState(() {
+          _serverTime = serverTimeUtc;
+          _serverTimeEat = serverTimeEat;
+        });
+      }
+    } catch (e) {
+      // Silently fail – fallback to local time is handled in getters
+      debugPrint('Failed to fetch server time: $e');
+    }
+  }
+
+  Future<void> _loadSettingsFromServer() async {
+    try {
+      final data = await SettingsService.getSettings();
+      setState(() {
+        allowedRadius = (data['radius'] as num).toDouble();
+        centerLat =
+            double.tryParse(data['gpsLatitude'].toString()) ??
+            8.986202255702445;
+        centerLng =
+            double.tryParse(data['gpsLongitude'].toString()) ??
+            38.78797835605372;
+      });
+    } catch (e) {
+      //silently fail
+    }
+  }
+
+  void _calculateWorkingTime() {
+    if (_todayData?['status'] == 'checked_in' &&
+        _todayData?['data'] != null &&
+        _serverTime != null) {
+      // 1. Parse check-in as UTC
+      final DateTime checkInUtc = DateTime.parse(
+        _todayData!['data']['checkInTime'],
+      );
+
+      // 2. Ensure server time is UTC (CRITICAL)
+      final DateTime currentUtc = _serverTime!;
+
+      // 3. Compute difference in UTC
+      final Duration diff = currentUtc.difference(checkInUtc);
+
+      // 4. Prevent negative duration (clock sync issues / edge cases)
+      if (diff.isNegative) {
+        debugPrint('Negative duration detected. Skipping...');
+        return;
+      }
+
+      debugPrint('Check-in (UTC): $checkInUtc');
+      debugPrint('Current (UTC): $currentUtc');
+      debugPrint('Working duration: ${diff.inHours}h ${diff.inMinutes % 60}m');
+
+      setState(() {
+        _workingFor = "${diff.inHours}h ${diff.inMinutes % 60}m";
+      });
+    } else {
+      setState(() => _workingFor = "0h 0m");
+    }
+  }
+
+  void _setupAnimation() {
+    _controller = AnimationController(
+      duration: const Duration(seconds: 2),
+      vsync: this,
+    )..repeat(reverse: false);
+    _animation = Tween<double>(begin: 0, end: 100).animate(_controller);
+  }
+
+  String getFormattedDate() {
+    final now = _serverTime ?? DateTime.now();
+    return DateFormat("E, MMM, d, yyyy").format(now);
+  }
+
+  String getFormattedTime() {
+    final now = _serverTimeEat ?? DateTime.now();
+    return DateFormat("hh:mm a").format(now);
+  }
+
+  String get greeting {
+    final now = _serverTimeEat ?? DateTime.now();
+    final hour = now.hour;
+    print("Now: ${now}, hour: ${hour}");
+    if (hour >= 6 && hour < 12) {
+      return 'Good morning,';
+    } else if (hour >= 12 && hour < 18) {
+      return 'Good afternoon,';
+    } else {
+      return 'Good evening,';
+    }
+  }
+
+  Future<void> _runLocationCheck() async {
+    bool result = await checkLocation();
+    if (mounted) {
+      setState(() {
+        isInsideGeofence = result;
+      });
+    }
+  }
+
+  Future<bool> checkLocation() async {
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      return false;
+    }
+
+    Position position = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+    );
+
+    double distance = Geolocator.distanceBetween(
+      centerLat,
+      centerLng,
+      position.latitude,
+      position.longitude,
+    );
+    setState(() {
+      globalDistance = distance;
+    });
+
+    return distance <= allowedRadius;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Shimmer.fromColors(
+        baseColor: Colors.grey.shade300,
+        highlightColor: Colors.grey.shade100,
+        child: const EmployeeDashboardSkeleton(),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.red, size: 40),
+            const SizedBox(height: 16),
+            Text("Something went wrong", style: AppTextStyles.bodyBold),
+            TextButton(onPressed: _refreshAllData, child: const Text("Retry")),
+          ],
+        ),
+      );
+    }
+
+    // Logic for Summary Data
+    final bool hasCheckedIn = _todayData?['status'] == "checked_in";
+    final bool isCheckedIn =
+        (_todayData?['data']?['isCheckedIn'] ?? false) == true;
+    final bool isWeekend = _todayData?['isWeekend'] ?? false;
+
+    final String checkInTimeDisplay = hasCheckedIn
+        ? _todayData!['data']['checkInTime'] != null
+              ? DateFormat.jm().format(
+                  DateTime.parse(_todayData!['data']['checkInTime']).toLocal(),
+                )
+              : "--:--"
+        : "--:--";
+
+    final String checkOutTimeDisplay = hasCheckedIn
+        ? _todayData!['data']['checkOutTime'] != null
+              ? DateFormat.jm().format(
+                  DateTime.parse(_todayData!['data']['checkOutTime']).toLocal(),
+                )
+              : "--:--"
+        : "--:--";
+
+    final String statusText = isWeekend
+        ? "Weekend"
+        : (isCheckedIn ? "Checked In" : "Checked Out");
+    final Color statusColor = isWeekend
+        ? Colors.blue
+        : (isCheckedIn ? AppColors.primaryGreen : AppColors.redLate);
+
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      greeting,
+                      style: AppTextStyles.bodyRegular.copyWith(fontSize: 18),
+                    ),
+                    Text(
+                      _userData?.fullName ?? "User",
+                      style: AppTextStyles.heading1,
+                    ),
+                  ],
+                ),
+                GestureDetector(
+                  onTap: widget.onProfilePressed,
+                  child: CircleAvatar(
+                    radius: 24,
+                    backgroundImage: NetworkImage(
+                      _userData?.imageUrl ??
+                          "https://randomuser.me/api/portraits/men/20.jpg",
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            // Status Card
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.cardWhite,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppColors.primaryText.withOpacity(0.2),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    getFormattedDate(),
+                    style: AppTextStyles.bodyRegular.copyWith(fontSize: 15),
+                  ),
+                  Text(
+                    getFormattedTime(),
+                    style: AppTextStyles.bodyRegular.copyWith(fontSize: 15),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 40),
+            // const Spacer(),
+
+            // Central Scan Button
+            Center(
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  AnimatedBuilder(
+                    animation: _animation,
+                    builder: (context, child) {
+                      return CustomPaint(
+                        painter: RipplePainter(_animation.value, hasCheckedIn),
+                        size: const Size(210, 210),
+                      );
+                    },
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      // isInsideGeofence = false;
+                      isCheckedIn
+                          ? isInsideGeofence
+                                ? _showCheckoutDialog()
+                                : ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        "You're already outside the office range go back and try again",
+                                      ),
+                                      backgroundColor: AppColors.redLate,
+                                    ),
+                                  )
+                          : widget.onScanPressed();
+                    },
+                    child: Container(
+                      width: 150,
+                      height: 150,
+                      decoration: BoxDecoration(
+                        color: isCheckedIn
+                            ? Colors.redAccent
+                            : AppColors.primaryText,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color:
+                                (isCheckedIn
+                                        ? Colors.redAccent
+                                        : AppColors.primaryText)
+                                    .withOpacity(0.3),
+                            blurRadius: 15,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            isCheckedIn ? Icons.logout : Icons.login,
+                            color: Colors.white,
+                            size: 40,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            isCheckedIn ? 'CHECK OUT' : 'CHECK IN',
+                            style: AppTextStyles.label.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // const Spacer(),
+            const SizedBox(height: 40),
+            Text(
+              "TODAY'S SUMMARY",
+              style: AppTextStyles.label.copyWith(letterSpacing: 1.2),
+            ),
+            const SizedBox(height: 16),
+
+            // Summary Grid
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              childAspectRatio: 1.5,
+              children: [
+                _buildSummaryCard(
+                  'Check In Time',
+                  checkInTimeDisplay,
+                  Icons.timer,
+                ),
+                _buildSummaryCard(
+                  'Working for',
+                  _workingFor,
+                  Icons.hourglass_bottom_outlined,
+                ),
+                _buildSummaryCard(
+                  'Check Out Time',
+                  checkOutTimeDisplay,
+                  Icons.timer,
+                ),
+                _buildSummaryCard(
+                  'Status',
+                  statusText,
+                  Icons.switch_account_sharp,
+                  textColor: statusColor,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryCard(
+    String title,
+    String value,
+    IconData icon, {
+    Color bgColor = AppColors.cardWhite,
+    Color textColor = AppColors.primaryText,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primaryText.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Row(
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: textColor == AppColors.primaryText
+                    ? AppColors.greyText
+                    : textColor,
+              ),
+              const SizedBox(width: 8),
+              Text(title, style: AppTextStyles.label),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: AppTextStyles.bodyBold.copyWith(
+              color: textColor,
+              fontSize: 18,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCheckoutDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Icon
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.logout,
+                    color: Colors.redAccent,
+                    size: 32,
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Title
+                Text("Check Out", style: AppTextStyles.heading2),
+
+                const SizedBox(height: 8),
+
+                // Message
+                Text(
+                  "Are you ready to check out?",
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.bodyRegular,
+                ),
+
+                const SizedBox(height: 24),
+
+                // Buttons
+                Row(
+                  children: [
+                    // Confirm Checkout
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          Navigator.pop(context);
+
+                          try {
+                            final attendanceId = _todayData?['data']?['id'];
+
+                            if (attendanceId == null) {
+                              throw Exception("Attendance ID not found");
+                            }
+
+                            await AttendanceService.checkOut(attendanceId);
+
+                            // Refresh all data after checkout
+                            await _refreshAllData();
+                          } catch (e) {
+                            debugPrint("Checkout error: $e");
+
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text("Checkout failed")),
+                              );
+                            }
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          "Check Out",
+                          style: TextStyle(color: AppColors.background),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    // Cancel
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          "Cancel",
+                          style: TextStyle(color: AppColors.primaryText),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  //
+}
+
+class RipplePainter extends CustomPainter {
+  final double radius;
+  final bool checkedIn;
+  RipplePainter(this.radius, this.checkedIn);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    Paint paint = Paint()
+      ..color = checkedIn
+          ? AppColors.redLate.withOpacity(0.5)
+          : AppColors.primaryText.withOpacity(0.5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    canvas.drawCircle(size.center(Offset.zero), radius, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}

@@ -1,6 +1,6 @@
 import 'package:attendance/Pages/Auth/signup.dart';
-import 'package:attendance/db/auth_provider.dart';
-import 'package:attendance/db/auth_service.dart';
+import 'package:attendance/service/auth_provider.dart';
+import 'package:attendance/service/auth_service.dart';
 import 'package:attendance/pages/Admin/home_screen.dart';
 import 'package:attendance/pages/Employee/home_screen.dart';
 import 'package:attendance/pages/Employee/pending_screen.dart';
@@ -44,7 +44,7 @@ class LoginPageState extends State<LoginPage> {
 
         if (!mounted) return;
         bool isAdmin = response['user']['isAdmin'];
-        int UserId = response['user']['id'].toInt();
+        String UserId = response['user']['id'];
         // print("userid : $UserId");
         bool isApproved = response['user']['isApproved'];
 
@@ -71,11 +71,12 @@ class LoginPageState extends State<LoginPage> {
         );
       } catch (e) {
         if (!mounted) return;
-
+        debugPrint(e.toString());
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(e.toString().replaceAll('Exception: ', '')),
             backgroundColor: Colors.red,
+            // duration: Duration(seconds: 60),
           ),
         );
       } finally {

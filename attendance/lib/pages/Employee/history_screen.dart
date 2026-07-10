@@ -1,13 +1,14 @@
-import 'package:attendance/db/attendance_service.dart';
-import 'package:attendance/db/settings.dart';
+import 'dart:convert';
+import 'package:attendance/service/attendance_service.dart';
 import 'package:attendance/pages/skeleton/history_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
 
 class HistoryScreen extends StatefulWidget {
-  final int id;
+  final String id;
   const HistoryScreen({super.key, required this.id});
 
   @override
@@ -16,78 +17,149 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   bool isThisWeek = true;
-  List<dynamic> allAttendance = [];
+  List<dynamic> allAttendance = []; // daily‑grouped data
   bool isLoading = true;
   String? error;
-  // DateTime? _serverTimeUtc;
   DateTime? _serverTimeEat;
+
+  static const String _cacheKey = 'history_cache_';
 
   @override
   void initState() {
     super.initState();
-    _fetchData();
+    _loadData();
   }
 
-  Future<void> _fetchData() async {
-    try {
-      // Fetch server time and attendance in parallel
-      await Future.wait([_fetchServerTime(), _fetchAttendance()]);
+  // ------------------------------------------------------------
+  //  SMART LOADER
+  // ------------------------------------------------------------
+  Future<void> _loadData() async {
+    final todayEatStr = _todayEatDateString();
+
+    // 1. Try cache
+    final cached = await _readCache();
+    if (cached != null && cached['date'] == todayEatStr) {
+      // Cache is from today – use it and skip the network call
       if (mounted) {
         setState(() {
+          allAttendance = groupByDay(cached['data'] as List<dynamic>);
           isLoading = false;
         });
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          error = e.toString();
-          isLoading = false;
-        });
-      }
+      return;
     }
+
+    // 2. Cache missing or stale – fetch fresh data
+    await _fetchFreshData();
   }
 
-  Future<void> _fetchServerTime() async {
+  // ------------------------------------------------------------
+  //  CACHE HELPERS
+  // ------------------------------------------------------------
+  Future<Map<String, dynamic>?> _readCache() async {
     try {
-      final serverTimeUtc = await SettingsService.getServerTime();
-      final serverTimeEat = serverTimeUtc.add(const Duration(hours: 3));
-      if (mounted) {
-        setState(() {
-          _serverTimeEat = serverTimeEat;
-        });
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getString(_cacheKey + widget.id);
+      if (json != null) {
+        return jsonDecode(json) as Map<String, dynamic>;
       }
     } catch (e) {
-      // If server time fetch fails, fallback to local device time
-      debugPrint('Failed to fetch server time: $e');
-      final now = DateTime.now();
+      debugPrint('Cache read error: $e');
+    }
+    return null;
+  }
+
+  Future<void> _writeCache(String date, List<dynamic> rawData) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final payload = jsonEncode({'date': date, 'data': rawData});
+      await prefs.setString(_cacheKey + widget.id, payload);
+    } catch (e) {
+      debugPrint('Cache write error: $e');
+    }
+  }
+
+  // Today in EAT as "YYYY-MM-DD"
+  String _todayEatDateString() {
+    final now = DateTime.now().toUtc().add(const Duration(hours: 3));
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  // ------------------------------------------------------------
+  //  DATA FETCHING & GROUPING
+  // ------------------------------------------------------------
+  Future<void> _fetchFreshData() async {
+    try {
+      final rawData = await AttendanceService.getAllAttendance(widget.id);
       if (mounted) {
         setState(() {
-          _serverTimeEat = now.toUtc().add(const Duration(hours: 3));
+          allAttendance = groupByDay(rawData);
+          isLoading = false;
+          error = null;
         });
+      }
+      // Always update cache with today’s date after a successful fetch
+      _writeCache(_todayEatDateString(), rawData);
+    } catch (e) {
+      if (mounted) {
+        if (allAttendance.isEmpty) error = e.toString();
+        isLoading = false;
       }
     }
   }
 
-  Future<void> _fetchAttendance() async {
-    final data = await AttendanceService.getAllAttendance(widget.id);
-    if (mounted) {
-      setState(() {
-        allAttendance = data;
-      });
+  // Group raw records by EAT date → daily summaries
+  List<Map<String, dynamic>> groupByDay(List<dynamic> rawRecords) {
+    final Map<String, List<dynamic>> grouped = {};
+    for (final record in rawRecords) {
+      final checkInUtc = DateTime.parse(record['checkInTime']);
+      final eatDate = checkInUtc.add(const Duration(hours: 3));
+      final dateKey =
+          '${eatDate.year}-${eatDate.month.toString().padLeft(2, '0')}-${eatDate.day.toString().padLeft(2, '0')}';
+      grouped.putIfAbsent(dateKey, () => []).add(record);
     }
+
+    return grouped.entries.map((entry) {
+      final records = entry.value;
+      final firstCheckIn = DateTime.parse(records.first['checkInTime']);
+      DateTime? lastCheckOut;
+      for (final r in records) {
+        if (r['checkOutTime'] != null) {
+          final out = DateTime.parse(r['checkOutTime']);
+          if (lastCheckOut == null || out.isAfter(lastCheckOut)) {
+            lastCheckOut = out;
+          }
+        }
+      }
+
+      double totalHours = 0;
+      for (final r in records) {
+        final hours = r['workingHours'];
+        if (hours != null)
+          totalHours += (hours is int ? hours.toDouble() : hours);
+      }
+
+      return {
+        'date': entry.key,
+        'checkInTime': firstCheckIn.toIso8601String(),
+        'checkOutTime': lastCheckOut?.toIso8601String(),
+        'workingHours': double.parse(totalHours.toStringAsFixed(2)),
+        'isLate': records.any((r) => r['isLate'] == true),
+        'numberOfCheckins': records.length,
+        'isCheckedIn': records.last['isCheckedIn'] ?? false,
+      };
+    }).toList()..sort((a, b) => a['date'].compareTo(b['date']));
   }
 
-  // Get reference current time in EAT (server or fallback)
-  DateTime get currentEat {
-    return _serverTimeEat ??
-        DateTime.now().toUtc().add(const Duration(hours: 3));
-  }
+  // ------------------------------------------------------------
+  //  COMPUTED HELPERS
+  // ------------------------------------------------------------
+  DateTime get currentEat =>
+      _serverTimeEat ?? DateTime.now().toUtc().add(const Duration(hours: 3));
 
-  // Filter attendance based on current toggle
   List<dynamic> get filteredAttendance {
     final now = currentEat;
     if (isThisWeek) {
-      // Get start of week (Monday) in EAT
       final startOfWeek = DateTime(
         now.year,
         now.month,
@@ -95,37 +167,28 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ).subtract(Duration(days: now.weekday - 1));
       final endOfWeek = startOfWeek.add(const Duration(days: 7));
       return allAttendance.where((record) {
-        // Convert record's UTC check-in to EAT for comparison
-        final checkInUtc = DateTime.parse(record['checkInTime']);
-        final checkInEat = checkInUtc.add(const Duration(hours: 3));
-        return checkInEat.isAfter(
+        final dateParts = record['date'].split('-');
+        final recDate = DateTime(
+          int.parse(dateParts[0]),
+          int.parse(dateParts[1]),
+          int.parse(dateParts[2]),
+        );
+        return recDate.isAfter(
               startOfWeek.subtract(const Duration(seconds: 1)),
             ) &&
-            checkInEat.isBefore(endOfWeek);
+            recDate.isBefore(endOfWeek);
       }).toList();
     } else {
-      // Current month in EAT
-      final startOfMonth = DateTime(now.year, now.month, 1);
-      final endOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
-      return allAttendance.where((record) {
-        final checkInUtc = DateTime.parse(record['checkInTime']);
-        final checkInEat = checkInUtc.add(const Duration(hours: 3));
-        return checkInEat.isAfter(
-              startOfMonth.subtract(const Duration(seconds: 1)),
-            ) &&
-            checkInEat.isBefore(endOfMonth.add(const Duration(seconds: 1)));
-      }).toList();
+      return allAttendance;
     }
   }
 
-  // Calculate stats for the filtered period
   Map<String, dynamic> get stats {
     final records = filteredAttendance;
     final daysPresent = records.length;
     final totalHours = records.fold<double>(0.0, (sum, r) {
       final hours = r['workingHours'];
-      if (hours == null) return sum;
-      return sum + (hours is int ? hours.toDouble() : hours as double);
+      return sum + (hours ?? 0.0);
     });
     final lateDays = records.where((r) => r['isLate'] == true).length;
     return {
@@ -135,10 +198,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
     };
   }
 
-  String _formatDate(DateTime checkInUtc) {
+  // ------------------------------------------------------------
+  //  FORMATTING HELPERS
+  // ------------------------------------------------------------
+  String _formatDate(String dateKey, String checkInIso) {
     final nowEat = currentEat;
     final todayEat = DateTime(nowEat.year, nowEat.month, nowEat.day);
-    final recordEat = checkInUtc.add(const Duration(hours: 3));
+    final recordEat = DateTime.parse(checkInIso).add(const Duration(hours: 3));
     final recordDateEat = DateTime(
       recordEat.year,
       recordEat.month,
@@ -148,8 +214,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return DateFormat('MMM d').format(recordEat);
   }
 
-  String _formatDay(DateTime checkInUtc) {
-    final recordEat = checkInUtc.add(const Duration(hours: 3));
+  String _formatDay(String checkInIso) {
+    final recordEat = DateTime.parse(checkInIso).add(const Duration(hours: 3));
     return DateFormat('EEE').format(recordEat);
   }
 
@@ -166,142 +232,170 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return '${h}h ${m}m';
   }
 
+  // ------------------------------------------------------------
+  //  BUILD
+  // ------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    if (isLoading) {
+    if (isLoading && allAttendance.isEmpty) {
       return Shimmer.fromColors(
         baseColor: Colors.grey.shade300,
         highlightColor: Colors.grey.shade100,
         child: const HistorySkeleton(),
       );
     }
-    if (error != null) {
+    if (error != null && allAttendance.isEmpty) {
       return Center(child: Text('Error: $error'));
     }
 
     final records = filteredAttendance;
     final stat = stats;
+    final screenHeight = MediaQuery.of(context).size.height;
 
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('My History', style: AppTextStyles.heading1),
-          Text(
-            'Your attendance roots',
-            style: AppTextStyles.bodyRegular.copyWith(
-              color: AppColors.greyText,
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: SingleChildScrollView(
+        child: RefreshIndicator(
+          onRefresh: _fetchFreshData,
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      children: [
+                        const Text('My History', style: AppTextStyles.heading1),
+                        Text(
+                          'Your attendance roots',
+                          style: AppTextStyles.bodyRegular.copyWith(
+                            color: AppColors.greyText,
+                          ),
+                        ),
+                      ],
+                    ),
+                    IconButton(
+                      onPressed: _fetchFreshData,
+                      icon: Icon(Icons.refresh),
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppColors.cardWhite,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
+
+                // Toggle Buttons (no re‑fetch, just filter)
+                Row(
+                  children: [
+                    _buildToggleBtn('This Week', isThisWeek, () {
+                      setState(() => isThisWeek = true);
+                    }),
+                    const SizedBox(width: 8),
+                    _buildToggleBtn('This Month', !isThisWeek, () {
+                      setState(() => isThisWeek = false);
+                    }),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
+
+                // Stat Cards
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildStatCard(
+                        stat['days']!,
+                        'Days Present',
+                        AppColors.cardWhite,
+                        AppColors.primaryText,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildStatCard(
+                        stat['hours']!,
+                        'Total Hours',
+                        AppColors.lightGreen,
+                        AppColors.primaryGreen,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildStatCard(
+                        stat['late']!,
+                        'Late Days',
+                        AppColors.cardWhite,
+                        AppColors.redLate,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 32),
+
+                records.isEmpty
+                    ? SizedBox(
+                        height: screenHeight * 0.5,
+                        child: Center(
+                          child: Text(
+                            'No attendance records for this period',
+                            style: AppTextStyles.bodyRegular,
+                          ),
+                        ),
+                      )
+                    : SizedBox(
+                        height: screenHeight * 0.55,
+                        child: ListView.builder(
+                          itemCount: records.length,
+                          itemBuilder: (context, index) {
+                            final record = records[index];
+                            final checkInIso = record['checkInTime'] as String;
+                            final checkOutIso =
+                                record['checkOutTime'] as String?;
+                            final workingHours = (record['workingHours'] as num)
+                                .toDouble();
+                            final isLate = record['isLate'] as bool;
+                            final nowEat = currentEat;
+                            final checkInUtc = DateTime.parse(checkInIso);
+                            final checkInEat = checkInUtc.add(
+                              const Duration(hours: 3),
+                            );
+                            final isToday =
+                                checkInEat.year == nowEat.year &&
+                                checkInEat.month == nowEat.month &&
+                                checkInEat.day == nowEat.day;
+
+                            return _buildTimelineItem(
+                              _formatDate(record['date'], checkInIso),
+                              _formatDay(checkInIso),
+                              _formatTime(checkInUtc),
+                              _formatTime(
+                                checkOutIso != null
+                                    ? DateTime.parse(checkOutIso)
+                                    : null,
+                              ),
+                              _formatDuration(workingHours),
+                              isLate: isLate,
+                              isToday: isToday,
+                            );
+                          },
+                        ),
+                      ),
+              ],
             ),
           ),
-          const SizedBox(height: 24),
-
-          // Toggle Buttons
-          Row(
-            children: [
-              _buildToggleBtn('This Week', isThisWeek, () {
-                setState(() {
-                  isThisWeek = true;
-                });
-              }),
-              const SizedBox(width: 8),
-              _buildToggleBtn('This Month', !isThisWeek, () {
-                setState(() {
-                  isThisWeek = false;
-                });
-              }),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
-          // Stat Cards Row
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatCard(
-                  stat['days'],
-                  'Days Present',
-                  AppColors.cardWhite,
-                  AppColors.primaryText,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildStatCard(
-                  stat['hours'],
-                  'Total Hours',
-                  AppColors.lightGreen,
-                  AppColors.primaryGreen,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildStatCard(
-                  stat['late'],
-                  'Late Days',
-                  AppColors.cardWhite,
-                  AppColors.redLate,
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 32),
-
-          // Timeline List
-          Expanded(
-            child: records.isEmpty
-                ? Center(
-                    child: Text(
-                      'No attendance records for this period',
-                      style: AppTextStyles.bodyRegular,
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: records.length,
-                    itemBuilder: (context, index) {
-                      final record = records[index];
-                      final checkInUtc = DateTime.parse(record['checkInTime']);
-                      final checkOutUtc = record['checkOutTime'] != null
-                          ? DateTime.parse(record['checkOutTime'])
-                          : null;
-
-                      // Safe conversion: handle both int and double from JSON
-                      final rawHours = record['workingHours'];
-                      final double? workingHours = rawHours != null
-                          ? (rawHours is int
-                                ? rawHours.toDouble()
-                                : rawHours as double)
-                          : null;
-
-                      final isLate = record['isLate'] ?? false;
-                      final nowEat = currentEat;
-                      final checkInEat = checkInUtc.add(
-                        const Duration(hours: 3),
-                      );
-                      final isToday =
-                          checkInEat.year == nowEat.year &&
-                          checkInEat.month == nowEat.month &&
-                          checkInEat.day == nowEat.day;
-
-                      return _buildTimelineItem(
-                        _formatDate(checkInUtc),
-                        _formatDay(checkInUtc),
-                        _formatTime(checkInUtc),
-                        _formatTime(checkOutUtc),
-                        _formatDuration(workingHours),
-                        isLate: isLate,
-                        isToday: isToday,
-                      );
-                    },
-                  ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
+  // ------------------------------------------------------------
+  //  WIDGET BUILDERS
+  // ------------------------------------------------------------
   Widget _buildToggleBtn(String text, bool isSelected, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
@@ -390,7 +484,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ],
             ),
           ),
-
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(bottom: 24.0),

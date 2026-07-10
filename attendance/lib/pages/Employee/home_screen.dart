@@ -7,7 +7,7 @@ import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
 
 class EmployeeHomeScreen extends StatefulWidget {
-  final int id;
+  final String id;
   const EmployeeHomeScreen({super.key, required this.id});
 
   @override
@@ -16,6 +16,8 @@ class EmployeeHomeScreen extends StatefulWidget {
 
 class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   int currentIndex = 0;
+  final GlobalKey<EmployeeDashboardScreenState> dashboardKey =
+      GlobalKey<EmployeeDashboardScreenState>();
 
   @override
   void initState() {
@@ -26,6 +28,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   Widget build(BuildContext context) {
     final List<Widget> pages = [
       EmployeeDashboardScreen(
+        key: dashboardKey,
         onScanPressed: () {
           setState(() {
             currentIndex = 1;
@@ -43,6 +46,9 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
         onCheckInSuccess: (response) {
           setState(() {
             currentIndex = 0; // Switch back to Dashboard
+          });
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            dashboardKey.currentState?.forceRefresh();
           });
         },
       ),

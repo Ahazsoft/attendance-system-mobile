@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'package:attendance/db/attendance_service.dart';
-import 'package:attendance/db/employee_service.dart';
-import 'package:attendance/db/settings.dart';
+import 'package:attendance/service/attendance_service.dart';
+import 'package:attendance/service/employee_service.dart';
+import 'package:attendance/service/settings.dart';
 import 'package:attendance/model/user.dart';
 import 'package:attendance/pages/skeleton/ledger_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
@@ -159,7 +159,7 @@ class _DigitalLedgerScreenState extends State<DigitalLedgerScreen> {
       }
 
       records.add({
-        'name': '${user.firstName} ${user.lastName}',
+        'name': user.fullName,
         'date': DateFormat('MMM d').format(checkInLocal),
         'inTime': DateFormat('h:mm a').format(checkInLocal),
         'outTime': isCheckedOut

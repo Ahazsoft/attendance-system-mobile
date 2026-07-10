@@ -1,7 +1,6 @@
 class User {
-  final int id;
-  final String firstName;
-  final String lastName;
+  final String id;
+  final String fullName;
   final String email;
   final bool isAdmin;
   final bool isApproved;
@@ -9,12 +8,10 @@ class User {
   final String? imageUrl;
   final double? salary;
   final String? telephone;
-  final int streak;
 
   User({
     required this.id,
-    required this.firstName,
-    required this.lastName,
+    required this.fullName,
     required this.email,
     required this.isAdmin,
     required this.isApproved,
@@ -22,14 +19,12 @@ class User {
     this.imageUrl,
     this.salary,
     this.telephone,
-    required this.streak,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       id: json['id'],
-      firstName: json['firstName'],
-      lastName: json['lastName'],
+      fullName: json['fullName'],
       email: json['email'],
       isAdmin: json['isAdmin'],
       isApproved: json['isApproved'],
@@ -37,15 +32,13 @@ class User {
       imageUrl: json['imageUrl'],
       salary: json['salary']?.toDouble(),
       telephone: json['telephone'],
-      streak: json['streak'],
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'firstName': firstName,
-      'lastName': lastName,
+      'fullName': fullName,
       'email': email,
       'isAdmin': isAdmin,
       'isApproved': isApproved,
@@ -53,14 +46,12 @@ class User {
       'imageUrl': imageUrl,
       'salary': salary,
       'telephone': telephone,
-      'streak': streak,
     };
   }
 
   User copyWith({
-    int? id,
-    String? firstName,
-    String? lastName,
+    String? id,
+    String? fullName,
     String? email,
     bool? isAdmin,
     bool? isApproved,
@@ -68,12 +59,10 @@ class User {
     String? imageUrl,
     double? salary,
     String? telephone,
-    int? streak,
   }) {
     return User(
       id: id ?? this.id,
-      firstName: firstName ?? this.firstName,
-      lastName: lastName ?? this.lastName,
+      fullName: fullName ?? this.fullName,
       email: email ?? this.email,
       isAdmin: isAdmin ?? this.isAdmin,
       isApproved: isApproved ?? this.isApproved,
@@ -81,7 +70,6 @@ class User {
       imageUrl: imageUrl ?? this.imageUrl,
       salary: salary ?? this.salary,
       telephone: telephone ?? this.telephone,
-      streak: streak ?? this.streak,
     );
   }
 }
@@ -97,5 +85,4 @@ const data = {
   "imageUrl": null,
   "salary": null,
   "telephone": null,
-  "streak": 0,
 };

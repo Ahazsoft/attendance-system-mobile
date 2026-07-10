@@ -4,7 +4,7 @@ import 'package:attendance/pages/Employee/home_screen.dart';
 import 'package:attendance/pages/Employee/pending_screen.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
-import 'package:attendance/db/auth_provider.dart';
+import 'package:attendance/service/auth_provider.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -63,7 +63,7 @@ class _SplashPageState extends State<SplashPage>
       final data = await AuthProvider.getUserData();
       final isAdmin = data['isAdmin'] as bool;
       final isApproved = data['isApproved'] as bool;
-      final userId = data['userId'] as int;
+      final userId = data['userId'] as String;
 
       Widget destination;
       if (isAdmin) {
