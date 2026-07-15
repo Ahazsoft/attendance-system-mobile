@@ -54,7 +54,6 @@ class _SplashPageState extends State<SplashPage>
     super.dispose();
   }
 
-  // Your existing _checkLogin logic (unchanged)
   Future<void> _checkLogin() async {
     final loggedIn = await AuthProvider.isLoggedIn();
     if (!mounted) return;

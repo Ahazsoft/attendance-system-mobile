@@ -47,9 +47,15 @@ class LoginPageState extends State<LoginPage> {
         String UserId = response['user']['id'];
         // print("userid : $UserId");
         bool isApproved = response['user']['isApproved'];
+        final String token = response['accessToken'];
 
         // ★ Save to SharedPreferences
-        await AuthProvider.login(UserId, isAdmin, isApproved);
+        await AuthProvider.login(
+          userId: UserId,
+          isAdmin: isAdmin,
+          isApproved: isApproved,
+          token: token,
+        );
 
         Navigator.pushReplacement(
           context,
