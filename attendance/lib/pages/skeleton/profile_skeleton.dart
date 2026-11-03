@@ -76,22 +76,27 @@ class ProfileSkeletonContent extends StatelessWidget {
         color: Colors.grey.shade200,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
-        children: [
-          ListTile(
-            leading: const Icon(Icons.notifications_none, color: Colors.grey),
-            title: _box(width: 120, height: 16),
-            trailing: _box(width: 40, height: 24, borderRadius: 12),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20),
-            child: Divider(height: 20),
-          ),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.grey),
-            title: _box(width: 80, height: 16),
-          ),
-        ],
+      child: Material(
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.notifications_none, color: Colors.grey),
+              title: _box(width: 120, height: 16),
+              trailing: _box(width: 40, height: 24, borderRadius: 12),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: Divider(height: 20),
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.grey),
+              title: _box(width: 80, height: 16),
+            ),
+          ],
+        ),
       ),
     );
   }

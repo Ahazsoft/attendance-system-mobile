@@ -8,6 +8,7 @@ import 'package:attendance/model/user.dart';
 import 'package:attendance/pages/shared/edit_profile_screen.dart';
 import 'package:attendance/pages/Auth/login.dart';
 import 'package:attendance/pages/skeleton/profile_skeleton.dart';
+import 'package:attendance/service/attendance_notification_service.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -62,7 +63,44 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
   @override
   void initState() {
     super.initState();
+    _loadNotificationPreference();
     _loadData(); // cache‑first logic
+  }
+
+  Future<void> _loadNotificationPreference() async {
+    final enabled = await AttendanceNotificationService.instance
+        .notificationsEnabled(widget.id);
+    if (mounted) setState(() => _notificationsEnabled = enabled);
+  }
+
+  Future<void> _setNotificationPreference(bool enabled) async {
+    final saved = await AttendanceNotificationService.instance
+        .setNotificationsEnabled(widget.id, enabled);
+    if (!mounted) return;
+    setState(() => _notificationsEnabled = saved && enabled);
+    if (!saved) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Notification permission was not granted'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _sendTestReminders() async {
+    final sent = await AttendanceNotificationService.instance.showTestReminders(
+      widget.id,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          sent
+              ? 'All three test reminders sent'
+              : 'Turn on notifications to send test reminders',
+        ),
+      ),
+    );
   }
 
   // Cache‑first: use today's cache if available, else fetch from server
@@ -272,52 +310,65 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
           BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10),
         ],
       ),
-      child: Column(
-        children: [
-          SwitchListTile(
-            title: const Text(
-              "Notifications",
-              style: TextStyle(fontWeight: FontWeight.w500),
+      child: Material(
+        color: AppColors.cardWhite,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            SwitchListTile(
+              title: const Text(
+                "Notifications",
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              secondary: const Icon(
+                Icons.notifications_none,
+                color: AppColors.primaryText,
+              ),
+              activeThumbColor: AppColors.primaryText,
+              inactiveThumbColor: AppColors.primaryText,
+              value: _notificationsEnabled,
+              onChanged: _setNotificationPreference,
             ),
-            secondary: const Icon(
-              Icons.notifications_none,
-              color: AppColors.primaryText,
+            // if (_notificationsEnabled)
+            //   Align(
+            //     alignment: Alignment.centerRight,
+            //     child: TextButton.icon(
+            //       onPressed: _sendTestReminders,
+            //       icon: const Icon(Icons.notifications_active_outlined),
+            //       label: const Text('Send all test reminders'),
+            //     ),
+            //   ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: Divider(height: 20),
             ),
-            activeThumbColor: AppColors.primaryText,
-            inactiveThumbColor: AppColors.primaryText,
-            value: _notificationsEnabled,
-            onChanged: (bool value) =>
-                setState(() => _notificationsEnabled = value),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20),
-            child: Divider(height: 20),
-          ),
-          ListTile(
-            leading: const Icon(Icons.logout, color: AppColors.primaryText),
-            title: const Text(
-              "Logout",
-              style: TextStyle(fontWeight: FontWeight.w500),
+            ListTile(
+              leading: const Icon(Icons.logout, color: AppColors.primaryText),
+              title: const Text(
+                "Logout",
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              onTap: () async {
+                try {
+                  await AuthProvider.logout();
+                  await AuthService.logout();
+                  if (!mounted) return;
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (context) => const LoginPage()),
+                    (route) => false,
+                  );
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Logout failed: ${e.toString()}')),
+                  );
+                }
+              },
             ),
-            onTap: () async {
-              try {
-                await AuthProvider.logout();
-                await AuthService.logout();
-                if (!mounted) return;
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (context) => const LoginPage()),
-                  (route) => false,
-                );
-              } catch (e) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Logout failed: ${e.toString()}')),
-                );
-              }
-            },
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

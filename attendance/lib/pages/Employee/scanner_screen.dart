@@ -1,21 +1,24 @@
 import 'package:attendance/service/attendance_service.dart';
 import 'package:attendance/service/settings.dart';
+import 'package:attendance/providers/attendance/attendance_notification_provider.dart';
+import 'package:attendance/providers/attendance/attendance_provider.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:wifi_scan/wifi_scan.dart';
 
-class ScannerScreen extends StatefulWidget {
+class ScannerScreen extends ConsumerStatefulWidget {
   final String id;
   final Function(dynamic response)? onCheckInSuccess;
   const ScannerScreen({super.key, required this.id, this.onCheckInSuccess});
 
   @override
-  State<ScannerScreen> createState() => _ScannerScreenState();
+  ConsumerState<ScannerScreen> createState() => _ScannerScreenState();
 }
 
-class _ScannerScreenState extends State<ScannerScreen> {
+class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   late WiFiAccessPoint wifi;
   bool isTorchOn = false;
   bool iswifiavailable = false;
@@ -150,6 +153,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     final secret = barcodes.first.rawValue;
     if (secret == null || secret.isEmpty) return;
 
+    final notificationService = ref.read(attendanceNotificationServiceProvider);
     isSubmitting = true;
     await cameraController.stop();
 
@@ -159,6 +163,8 @@ class _ScannerScreenState extends State<ScannerScreen> {
         secret: secret,
         isBssid: iswifiavailable,
       );
+      await notificationService.markAttendanceRecorded();
+      ref.invalidate(todayAttendanceProvider(widget.id));
 
       if (!mounted) return; // Additional guard
       final isLate = response['isLate'] ?? false;

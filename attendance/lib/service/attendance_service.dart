@@ -104,12 +104,20 @@ class AttendanceService {
   }
 
   /// Employee check‑out
-  static Future<Map<String, dynamic>> checkOut(int attendanceId) async {
+  static Future<Map<String, dynamic>> checkOut(
+    int attendanceId, {
+    double? latitude,
+    double? longitude,
+  }) async {
     try {
       final authHeader = await _getAuthHeader();
       final response = await _dio.post(
         '/api/public/attendance/checkout',
-        data: {'attendanceId': attendanceId},
+        data: {
+          'attendanceId': attendanceId,
+          'latitude': latitude,
+          'longitude': longitude,
+        },
         options: Options(headers: {'Authorization': authHeader}),
       );
 

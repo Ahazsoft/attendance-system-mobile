@@ -1,12 +1,19 @@
 import 'package:attendance/role_selection.dart';
+import 'package:attendance/service/attendance_notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  SystemChrome.setPreferredOrientations([
+  try {
+    await AttendanceNotificationService.instance.initialize();
+  } catch (error) {
+    debugPrint('Attendance notifications unavailable: $error');
+  }
+
+  await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);

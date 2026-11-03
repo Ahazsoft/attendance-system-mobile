@@ -1,18 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:attendance/service/attendance_service.dart';
-import 'package:attendance/service/employee_service.dart';
+import 'package:attendance/service/attendance_notification_service.dart';
 import 'package:attendance/service/settings.dart';
+import 'package:attendance/providers/attendance/attendance_notification_provider.dart';
+import 'package:attendance/providers/attendance/attendance_provider.dart';
+import 'package:attendance/providers/employee/employee_provider.dart';
 import 'package:attendance/model/user.dart';
 import 'package:attendance/pages/skeleton/dashboard_skeleton.dart';
 import 'package:attendance/theme/appTheme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
 
-class EmployeeDashboardScreen extends StatefulWidget {
+class EmployeeDashboardScreen extends ConsumerStatefulWidget {
   final VoidCallback onScanPressed;
   final VoidCallback onProfilePressed;
   final String id;
@@ -24,11 +28,12 @@ class EmployeeDashboardScreen extends StatefulWidget {
   });
 
   @override
-  State<EmployeeDashboardScreen> createState() =>
+  ConsumerState<EmployeeDashboardScreen> createState() =>
       EmployeeDashboardScreenState();
 }
 
-class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
+class EmployeeDashboardScreenState
+    extends ConsumerState<EmployeeDashboardScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _animation;
@@ -43,12 +48,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   String? fullName;
   String? imageUrl;
   bool _isLoading = true;
-  bool isInsideGeofence = false; // only updated at checkout
   String? _errorMessage;
-
-  double centerLat = 8.986273300000001;
-  double centerLng = 38.788376000000000;
-  double allowedRadius = 150;
 
   // Cache helpers
   static const String _cacheKeyPrefix = 'dashboard_cache_';
@@ -135,6 +135,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   // Data loading – cache-first then server
   // ---------------------------------------------------------------------------
   Future<void> _loadData() async {
+    final notificationService = ref.read(attendanceNotificationServiceProvider);
     final cached = await _readCache();
     if (cached != null && cached['date'] == _todayEatDateString()) {
       try {
@@ -143,18 +144,12 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
           imageUrl = cached['userImageUrl'];
           _todayData = cached['todayData'] as Map<String, dynamic>;
           final settings = cached['settings'] as Map<String, dynamic>;
-          allowedRadius = (settings['radius'] as num?)?.toDouble() ?? 150;
           _maxCheckins = (settings['NumberofCheckin'] as num?)?.toInt() ?? 3;
-          centerLat =
-              double.tryParse(settings['gpsLatitude']?.toString() ?? '') ??
-              8.986202255702445;
-          centerLng =
-              double.tryParse(settings['gpsLongitude']?.toString() ?? '') ??
-              38.78797835605372;
           _isLoading = false;
           _errorMessage = null;
         });
         _calculateWorkingTime();
+        await _syncAttendanceNotifications(notificationService);
         _fetchServerTime();
         return;
       } catch (e) {
@@ -168,6 +163,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
   /// Always fetches fresh data from server and overwrites cache.
   Future<void> _forceRefresh() async {
+    final notificationService = ref.read(attendanceNotificationServiceProvider);
     final totalSw = Stopwatch()..start();
     try {
       setState(() => _isLoading = true);
@@ -175,11 +171,11 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       final results = await Future.wait([
         _timeAction(
           'fetchUserById',
-          () => EmployeeService.fetchUserById(widget.id),
+          () => ref.refresh(employeeProvider(widget.id).future),
         ),
         _timeAction(
           'getTodayStatus',
-          () => AttendanceService.getTodayStatus(widget.id),
+          () => ref.refresh(todayAttendanceProvider(widget.id).future),
         ),
         _timeAction('fetchServerTime', () => _fetchServerTimeValue()),
         _timeAction('loadSettings', () => _loadSettingsFromServerValue()),
@@ -191,23 +187,19 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       final settings = results[3] as Map<String, dynamic>;
 
       setState(() {
+        fullName = user.fullName;
+        imageUrl = user.imageUrl;
         _todayData = todayData;
         if (serverTimeUtc != null) {
           _serverTime = serverTimeUtc;
           _serverTimeEat = serverTimeUtc.add(const Duration(hours: 3));
         }
-        allowedRadius = (settings['radius'] as num?)?.toDouble() ?? 150;
         _maxCheckins = (settings['NumberofCheckin'] as num?)?.toInt() ?? 3;
-        centerLat =
-            double.tryParse(settings['gpsLatitude']?.toString() ?? '') ??
-            8.986202255702445;
-        centerLng =
-            double.tryParse(settings['gpsLongitude']?.toString() ?? '') ??
-            38.78797835605372;
         _isLoading = false;
         _errorMessage = null;
       });
 
+      await _syncAttendanceNotifications(notificationService);
       _calculateWorkingTime();
       _writeCache(user: user, todayData: todayData, settings: settings);
     } catch (e) {
@@ -275,6 +267,19 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     return [];
   }
 
+  Future<void> _syncAttendanceNotifications(
+    AttendanceNotificationService notificationService,
+  ) async {
+    final attendances = _todayAttendances;
+    await notificationService.syncTodayStatus(
+      employeeId: widget.id,
+      attendanceCount: attendances.length,
+      hasActiveSession: attendances.any(
+        (entry) => entry['isCheckedIn'] == true,
+      ),
+    );
+  }
+
   Map<String, dynamic>? get _activeAttendance {
     for (var entry in _todayAttendances) {
       if (entry['isCheckedIn'] == true) return entry;
@@ -290,10 +295,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   bool get _canCheckIn =>
       _activeAttendance == null && _todayCheckinCount < _maxCheckins;
 
-  // ---------------------------------------------------------------------------
-  // Geolocation (only called at checkout time)
-  // ---------------------------------------------------------------------------
-  Future<bool> _checkLocation() async {
+  Future<Position?> _getCheckoutPosition() async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
@@ -301,25 +303,17 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        return false;
+        return null;
       }
 
-      Position position = await Geolocator.getCurrentPosition(
+      return await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
         ),
       );
-
-      double distance = Geolocator.distanceBetween(
-        centerLat,
-        centerLng,
-        position.latitude,
-        position.longitude,
-      );
-      return distance <= allowedRadius;
     } catch (e) {
-      debugPrint('Location check failed: $e');
-      return false;
+      debugPrint('Checkout location unavailable: $e');
+      return null;
     }
   }
 
@@ -412,11 +406,12 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   void _showCheckoutDialog() {
     final active = _inActiveAttendance;
     if (active == null || active['isCheckedIn'] != true) return;
+    final messenger = ScaffoldMessenger.of(context);
 
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) {
+      builder: (dialogContext) {
         return Dialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
@@ -452,19 +447,35 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () async {
-                          Navigator.pop(context);
+                          final notificationService = ref.read(
+                            attendanceNotificationServiceProvider,
+                          );
+                          Navigator.pop(dialogContext);
                           try {
                             final attendanceId = active['id'];
+                            final position = await _getCheckoutPosition();
                             await _timeAction(
                               'checkOut',
-                              () => AttendanceService.checkOut(attendanceId),
+                              () => AttendanceService.checkOut(
+                                attendanceId,
+                                latitude: position?.latitude,
+                                longitude: position?.longitude,
+                              ),
                             );
+                            await notificationService.markCheckedOut();
                             await _forceRefresh();
                           } catch (e) {
                             debugPrint("Checkout error: $e");
                             if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text("Checkout failed")),
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    e.toString().replaceFirst(
+                                      'Exception: ',
+                                      '',
+                                    ),
+                                  ),
+                                ),
                               );
                             }
                           }
@@ -485,7 +496,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                     const SizedBox(width: 12),
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: () => Navigator.pop(dialogContext),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
@@ -509,28 +520,14 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   }
 
   // ---------------------------------------------------------------------------
-  // Check-in/out tap handler (with on‑demand location for checkout)
+  // Check-in/out tap handler
   // ---------------------------------------------------------------------------
   Future<void> _handleCheckInOutTap() async {
     final active = _inActiveAttendance;
     final isCheckedIn = active != null;
 
     if (isCheckedIn) {
-      // Only now check geofence
-      final inside = await _timeAction('locationCheck', _checkLocation);
-      if (!mounted) return;
-      if (inside) {
-        _showCheckoutDialog();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "You're outside the office range. Go back and try again.",
-            ),
-            backgroundColor: AppColors.redLate,
-          ),
-        );
-      }
+      _showCheckoutDialog();
     } else if (_canCheckIn) {
       widget.onScanPressed();
     } else {

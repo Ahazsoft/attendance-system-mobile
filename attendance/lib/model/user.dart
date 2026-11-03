@@ -30,7 +30,9 @@ class User {
       isApproved: json['isApproved'],
       position: json['position'],
       imageUrl: json['imageUrl'],
-      salary: json['salary']?.toDouble(),
+      salary: json['salary'] == null
+          ? null
+          : double.tryParse(json['salary'].toString()),
       telephone: json['telephone'],
     );
   }
