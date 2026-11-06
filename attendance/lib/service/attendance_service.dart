@@ -66,12 +66,20 @@ class AttendanceService {
     required String employeeId,
     required String secret,
     required bool isBssid,
+    required double latitude,
+    required double longitude,
   }) async {
     try {
       final authHeader = await _getAuthHeader();
       final response = await _dio.post(
         '/api/public/attendance/checkin',
-        data: {'employeeId': employeeId, 'secret': secret, 'isBssid': isBssid},
+        data: {
+          'employeeId': employeeId,
+          'secret': secret,
+          'isBssid': isBssid,
+          'latitude': latitude,
+          'longitude': longitude,
+        },
         options: Options(headers: {'Authorization': authHeader}),
       );
 

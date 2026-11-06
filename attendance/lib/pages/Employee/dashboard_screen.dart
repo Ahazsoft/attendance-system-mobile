@@ -150,7 +150,9 @@ class EmployeeDashboardScreenState
         });
         _calculateWorkingTime();
         await _syncAttendanceNotifications(notificationService);
-        _fetchServerTime();
+        unawaited(
+          _forceRefresh(showLoading: false, preserveCachedDataOnError: true),
+        );
         return;
       } catch (e) {
         debugPrint('Cache parse failed, will refresh: $e');
@@ -162,11 +164,14 @@ class EmployeeDashboardScreenState
   }
 
   /// Always fetches fresh data from server and overwrites cache.
-  Future<void> _forceRefresh() async {
+  Future<void> _forceRefresh({
+    bool showLoading = true,
+    bool preserveCachedDataOnError = false,
+  }) async {
     final notificationService = ref.read(attendanceNotificationServiceProvider);
     final totalSw = Stopwatch()..start();
     try {
-      setState(() => _isLoading = true);
+      if (showLoading) setState(() => _isLoading = true);
 
       final results = await Future.wait([
         _timeAction(
@@ -204,10 +209,12 @@ class EmployeeDashboardScreenState
       _writeCache(user: user, todayData: todayData, settings: settings);
     } catch (e) {
       debugPrint("Dashboard force refresh error: $e");
-      setState(() {
-        _errorMessage = e.toString();
-        _isLoading = false;
-      });
+      if (!preserveCachedDataOnError || _todayData == null) {
+        setState(() {
+          _errorMessage = e.toString();
+          _isLoading = false;
+        });
+      }
     } finally {
       totalSw.stop();
       debugPrint(
@@ -273,7 +280,7 @@ class EmployeeDashboardScreenState
     final attendances = _todayAttendances;
     await notificationService.syncTodayStatus(
       employeeId: widget.id,
-      attendanceCount: attendances.length,
+      attendanceCount: _todayCheckinCount,
       hasActiveSession: attendances.any(
         (entry) => entry['isCheckedIn'] == true,
       ),
@@ -290,7 +297,12 @@ class EmployeeDashboardScreenState
   Map<String, dynamic>? get _inActiveAttendance =>
       _activeAttendance; // alias, kept for clarity
 
-  int get _todayCheckinCount => _todayAttendances.length;
+  int get _todayCheckinCount => _todayAttendances
+      .where(
+        (entry) =>
+            entry['isForcedCheckout'] != true && entry['isAbsent'] != true,
+      )
+      .length;
 
   bool get _canCheckIn =>
       _activeAttendance == null && _todayCheckinCount < _maxCheckins;
@@ -454,12 +466,17 @@ class EmployeeDashboardScreenState
                           try {
                             final attendanceId = active['id'];
                             final position = await _getCheckoutPosition();
+                            if (position == null) {
+                              throw Exception(
+                                "Location permission is required to check out",
+                              );
+                            }
                             await _timeAction(
                               'checkOut',
                               () => AttendanceService.checkOut(
                                 attendanceId,
-                                latitude: position?.latitude,
-                                longitude: position?.longitude,
+                                latitude: position.latitude,
+                                longitude: position.longitude,
                               ),
                             );
                             await notificationService.markCheckedOut();

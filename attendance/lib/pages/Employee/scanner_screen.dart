@@ -22,13 +22,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   late WiFiAccessPoint wifi;
   bool isTorchOn = false;
   bool iswifiavailable = false;
-  bool? isInsideGeofence;
-  double globalDistance = 0;
+  bool? isLocationAvailable;
   bool isSubmitting = false;
 
-  double centerLat = 8.986273300000001;
-  double centerLng = 38.788376000000000;
-  double allowedRadius = 150;
   String wifiBssid = "00:4c:e5:f6:61:49";
 
   final MobileScannerController cameraController = MobileScannerController(
@@ -51,13 +47,6 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       print("Scanner Page data  = $data");
       if (!mounted) return; // Guard after await
       setState(() {
-        allowedRadius = (data['radius'] as num).toDouble();
-        centerLat =
-            double.tryParse(data['gpsLatitude'].toString()) ??
-            8.986202255702445;
-        centerLng =
-            double.tryParse(data['gpsLongitude'].toString()) ??
-            38.78797835605372;
         wifiBssid = data['bssid'] ?? "";
       });
     } catch (e) {
@@ -68,14 +57,17 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
 
   // ---- Location check (both methods guarded) ----
   Future<void> _runLocationCheck() async {
-    bool result = await checkLocation();
-    if (!mounted) return;
-    setState(() {
-      isInsideGeofence = result;
-    });
+    try {
+      final position = await _getCurrentPosition();
+      if (!mounted) return;
+      setState(() => isLocationAvailable = position != null);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => isLocationAvailable = false);
+    }
   }
 
-  Future<bool> checkLocation() async {
+  Future<Position?> _getCurrentPosition() async {
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -83,27 +75,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
 
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
-      return false;
+      return null;
     }
 
-    Position position = await Geolocator.getCurrentPosition(
+    return Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
     );
-
-    if (!mounted) return false; // Guard after GPS fetch
-
-    double distance = Geolocator.distanceBetween(
-      centerLat,
-      centerLng,
-      position.latitude,
-      position.longitude,
-    );
-
-    setState(() {
-      globalDistance = distance;
-    });
-
-    return distance <= allowedRadius;
   }
 
   // ---- WiFi check (both methods guarded) ----
@@ -144,7 +121,6 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
 
   // ---- Barcode handling unchanged (already uses mounted) ----
   Future<void> _handleBarcode(BarcodeCapture capture) async {
-    if (isInsideGeofence != true) return;
     if (isSubmitting) return;
 
     final barcodes = capture.barcodes;
@@ -158,10 +134,18 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     await cameraController.stop();
 
     try {
+      final position = await _getCurrentPosition();
+      if (position == null) {
+        throw Exception("Location permission is required to check in");
+      }
+      if (mounted) setState(() => isLocationAvailable = true);
+
       final response = await AttendanceService.checkIn(
         employeeId: widget.id,
         secret: secret,
         isBssid: iswifiavailable,
+        latitude: position.latitude,
+        longitude: position.longitude,
       );
       await notificationService.markAttendanceRecorded();
       ref.invalidate(todayAttendanceProvider(widget.id));
@@ -228,34 +212,6 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                     ),
                   ),
                   _buildCorners(),
-                  if (isInsideGeofence == false || isInsideGeofence == null)
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.6),
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.location_off,
-                              color: Colors.white,
-                              size: 48,
-                            ),
-                            SizedBox(height: 16),
-                            Text(
-                              "SCANNER DISABLED\nMove inside the office",
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -264,12 +220,6 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
           _buildLocationBadge(),
           const SizedBox(height: 24),
           _buildWifiBadge(),
-          const SizedBox(height: 24),
-          Center(
-            child: Text(
-              "Approximately ${globalDistance.toStringAsFixed(0)}m away from office",
-            ),
-          ),
           const SizedBox(height: 24),
         ],
       ),
@@ -306,11 +256,11 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   }
 
   Widget _buildLocationBadge() {
-    if (isInsideGeofence == null) {
+    if (isLocationAvailable == null) {
       return _loading('Scanning location', Icons.location_off);
     }
 
-    final bool verified = isInsideGeofence!;
+    final bool verified = isLocationAvailable!;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -344,13 +294,13 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  verified ? 'Location Verified' : 'Location Not Verified',
+                  verified ? 'GPS Available' : 'GPS Unavailable',
                   style: AppTextStyles.bodyBold,
                 ),
                 Text(
                   verified
-                      ? 'Within Office Geofence (${allowedRadius.toInt()}m)'
-                      : 'Please move closer to the office',
+                      ? 'Location will be verified when you check in'
+                      : 'Enable location to check in',
                   style: AppTextStyles.label,
                 ),
               ],
@@ -370,7 +320,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   }
 
   Widget _buildWifiBadge() {
-    if (isInsideGeofence == null) {
+    if (isLocationAvailable == null) {
       return _loading('Scanning For Wifi', Icons.wifi_off);
     }
 
